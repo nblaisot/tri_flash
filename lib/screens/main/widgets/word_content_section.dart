@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/screens/main/widgets/word_tile.dart';
 
 /// Displays the selected word along with transcription/translation toggles.
@@ -17,6 +18,7 @@ class WordContentSection extends StatelessWidget {
     required this.onToggleTranscription,
     required this.onToggleTranslation,
     required this.onSpeakWord,
+    required this.onGenerateSentence,
     required this.wordsCountKey,
     required this.wordTileKey,
     required this.ttsButtonKey,
@@ -35,6 +37,7 @@ class WordContentSection extends StatelessWidget {
   final VoidCallback onToggleTranscription;
   final VoidCallback onToggleTranslation;
   final VoidCallback onSpeakWord;
+  final VoidCallback onGenerateSentence;
 
   final GlobalKey wordsCountKey;
   final GlobalKey wordTileKey;
@@ -48,7 +51,10 @@ class WordContentSection extends StatelessWidget {
         Container(
           key: wordsCountKey,
           child: Text(
-            'Words: $activeWords / $totalWords',
+            context.l10n.text('wordsCount', {
+              'active': activeWords,
+              'total': totalWords,
+            }),
             style: const TextStyle(fontSize: 16),
           ),
         ),
@@ -56,28 +62,43 @@ class WordContentSection extends StatelessWidget {
         Container(
           key: wordTileKey,
           child: WordTile(
-            label: 'Word',
+            label: context.l10n.text('word'),
             word: currentWord['word'],
             isVisible: showWord,
             onToggle: onToggleWord,
-            trailing: IconButton(
-              key: ttsButtonKey,
-              icon: const Icon(Icons.play_arrow),
-              onPressed: onSpeakWord,
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  key: ttsButtonKey,
+                  icon: const Icon(Icons.play_arrow),
+                  onPressed: onSpeakWord,
+                ),
+                IconButton(
+                  tooltip: context.l10n.text('generateSentence'),
+                  icon: const Icon(Icons.auto_awesome),
+                  onPressed: onGenerateSentence,
+                ),
+              ],
             ),
           ),
         ),
         WordTile(
-          label: 'Transcription',
+          label: context.l10n.text('transcription'),
           word: currentWord['transcription'],
           isVisible: showTranscription,
           onToggle: onToggleTranscription,
         ),
         WordTile(
-          label: 'Translation',
+          label: context.l10n.text('translation'),
           word: currentWord['translation'],
           isVisible: showTranslation,
           onToggle: onToggleTranslation,
+          trailing: IconButton(
+            tooltip: context.l10n.text('generateSentence'),
+            icon: const Icon(Icons.auto_awesome),
+            onPressed: onGenerateSentence,
+          ),
         ),
       ],
     );

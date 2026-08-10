@@ -62,20 +62,36 @@ class WordService {
       records.addAll(categoryRecords);
     }
 
-    final words = records
-        .map((record) {
-          final wordMap = Map<String, dynamic>.from(record.value);
-          wordMap['id'] = record.key;
-          return wordMap;
-        })
-        .where((word) => word['isActive'] == 1)
-        .toList();
+    final words =
+        records
+            .map((record) {
+              final wordMap = Map<String, dynamic>.from(record.value);
+              wordMap['id'] = record.key;
+              return wordMap;
+            })
+            .where((word) => word['isActive'] == 1)
+            .toList();
 
     return {
       'words': words,
       'totalWords': records.length,
       'activeWords': words.length,
     };
+  }
+
+  Future<List<Map<String, dynamic>>> loadActiveWordsForCategories(
+    List<String> categories,
+  ) async {
+    final records = <RecordSnapshot<int, Map<String, dynamic>>>[];
+    for (final category in categories) {
+      records.addAll(
+        await DatabaseHelper.instance.queryWordsByCategory(category),
+      );
+    }
+    return records
+        .map((record) => <String, dynamic>{...record.value, 'id': record.key})
+        .where((word) => word['isActive'] == 1)
+        .toList();
   }
 
   Future<void> toggleWordActive(Map<String, dynamic> word) async {

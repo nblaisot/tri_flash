@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:tri_flash/l10n/app_localizations.dart';
 
 /// Custom [AppBar] used on the main screen.
 ///
@@ -40,12 +41,38 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
           key: menuButtonKey,
           child: PopupMenuButton<String>(
             onSelected: onMenuSelected,
-            itemBuilder: (BuildContext context) => const <PopupMenuEntry<String>>[
-              PopupMenuItem<String>(value: 'edit', child: Text('Edit Words')),
-              PopupMenuItem<String>(value: 'load', child: Text('Load words')),
-              PopupMenuItem<String>(value: 'copy_csv', child: Text('Copy DB to Clipboard as tsv')),
-              PopupMenuItem<String>(value: 'settings', child: Text('Settings')),
-            ],
+            itemBuilder:
+                (BuildContext context) => <PopupMenuEntry<String>>[
+                  PopupMenuItem<String>(
+                    value: 'generate_text',
+                    child: ListTile(
+                      leading: const Icon(Icons.auto_stories),
+                      title: Text(context.l10n.text('generateText')),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'text_history',
+                    child: Text(context.l10n.text('textHistory')),
+                  ),
+                  const PopupMenuDivider(),
+                  PopupMenuItem<String>(
+                    value: 'edit',
+                    child: Text(context.l10n.text('editWords')),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'load',
+                    child: Text(context.l10n.text('loadWords')),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'copy_csv',
+                    child: Text(context.l10n.text('copyDatabase')),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'settings',
+                    child: Text(context.l10n.text('settings')),
+                  ),
+                ],
           ),
         ),
       ],
@@ -63,14 +90,18 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Categories:', style: TextStyle(fontSize: 12)),
+                      Text(
+                        context.l10n.text('categories'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       const SizedBox(height: 2),
                       Container(
                         key: categoriesButtonKey,
                         child: ElevatedButton(
                           onPressed: onShowCategorySelection,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                            backgroundColor:
+                                Theme.of(context).scaffoldBackgroundColor,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
@@ -93,14 +124,18 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      const Text('Display:', style: TextStyle(fontSize: 12)),
+                      Text(
+                        context.l10n.text('display'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       const SizedBox(height: 2),
                       Container(
                         key: displayButtonKey,
                         child: ElevatedButton(
                           onPressed: onShowDisplaySelection,
                           style: ElevatedButton.styleFrom(
-                            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+                            backgroundColor:
+                                Theme.of(context).scaffoldBackgroundColor,
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),

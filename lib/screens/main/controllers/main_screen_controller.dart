@@ -17,10 +17,10 @@ class MainScreenController extends ChangeNotifier {
     required TtsService ttsService,
     required WordService wordService,
     required CsvService csvService,
-  })  : _appState = appState,
-        _ttsService = ttsService,
-        _wordService = wordService,
-        _csvService = csvService;
+  }) : _appState = appState,
+       _ttsService = ttsService,
+       _wordService = wordService,
+       _csvService = csvService;
 
   final AppState _appState;
   final TtsService _ttsService;
@@ -54,6 +54,10 @@ class MainScreenController extends ChangeNotifier {
 
   /// Exposes the categories currently selected by the user.
   List<String> get selectedCategories => _wordService.selectedCategories;
+
+  Future<List<Map<String, dynamic>>> loadActiveWordsForCategories(
+    List<String> categories,
+  ) => _wordService.loadActiveWordsForCategories(categories);
 
   /// Initiates services and loads the initial dataset.
   Future<void> initialise() async {
@@ -142,8 +146,7 @@ class MainScreenController extends ChangeNotifier {
   Future<bool> duplicateCurrentWordToSpecialCategory() async {
     final word = currentWord;
     if (word == null) return false;
-    final bool duplicated =
-        await _wordService.duplicateToSpecialCategory(word);
+    final bool duplicated = await _wordService.duplicateToSpecialCategory(word);
     if (duplicated) {
       await loadSelectedCategories();
     }

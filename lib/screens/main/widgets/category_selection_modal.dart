@@ -7,11 +7,15 @@ class CategorySelectionModal extends StatefulWidget {
     required this.categories,
     required this.selectedCategories,
     required this.onSelectionChanged,
+    this.title = 'Select Categories',
+    this.doneLabel = 'Done',
   });
 
   final List<String> categories;
   final List<String> selectedCategories;
   final Function(List<String>) onSelectionChanged;
+  final String title;
+  final String doneLabel;
 
   @override
   State<CategorySelectionModal> createState() => _CategorySelectionModalState();
@@ -33,9 +37,9 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          const Text(
-            'Select Categories',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Text(
+            widget.title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Expanded(
@@ -73,7 +77,7 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
               widget.onSelectionChanged(_tempSelection);
               Navigator.pop(context);
             },
-            child: const Text('Done'),
+            child: Text(widget.doneLabel),
           ),
         ],
       ),

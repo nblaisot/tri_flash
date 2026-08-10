@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/screens/main/main_screen.dart';
+import 'package:tri_flash/state/app_preferences.dart';
 
 /// Root widget for the Tri Flash application.
 ///
@@ -11,14 +14,26 @@ class TriFlashApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Tri Flash',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        primarySwatch: Colors.blue,
-        visualDensity: VisualDensity.adaptivePlatformDensity,
-      ),
-      home: const MainScreen(),
+    return AnimatedBuilder(
+      animation: AppPreferences.instance,
+      builder:
+          (context, _) => MaterialApp(
+            title: 'Tri Flash',
+            debugShowCheckedModeBanner: false,
+            locale: AppPreferences.instance.locale,
+            supportedLocales: AppLocalizations.supportedLocales,
+            localizationsDelegates: const [
+              AppLocalizations.delegate,
+              GlobalMaterialLocalizations.delegate,
+              GlobalWidgetsLocalizations.delegate,
+              GlobalCupertinoLocalizations.delegate,
+            ],
+            theme: ThemeData(
+              primarySwatch: Colors.blue,
+              visualDensity: VisualDensity.adaptivePlatformDensity,
+            ),
+            home: const MainScreen(),
+          ),
     );
   }
 }

@@ -1,6 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:fluttertoast/fluttertoast.dart';
+import 'package:tri_flash/l10n/app_localizations.dart';
+import 'package:tri_flash/models/ai_models.dart';
+import 'package:tri_flash/screens/ai/ai_setup_flow.dart';
+import 'package:tri_flash/screens/ai/generated_text_history_screen.dart';
+import 'package:tri_flash/screens/ai/generated_text_viewer_screen.dart';
+import 'package:tri_flash/screens/ai/text_generation_sheet.dart';
 
 import 'package:tri_flash/screens/edit_words/edit_words_screen.dart';
 import 'package:tri_flash/screens/load_csv/load_csv_screen.dart';
@@ -13,6 +19,8 @@ import 'package:tri_flash/screens/main/widgets/onboarding_overlay.dart';
 import 'package:tri_flash/screens/main/widgets/word_content_section.dart';
 import 'package:tri_flash/screens/settings/settings_screen.dart';
 import 'package:tri_flash/services/csv_service.dart';
+import 'package:tri_flash/services/ai/ai_generation_service.dart';
+import 'package:tri_flash/services/ai/generated_text_history_service.dart';
 import 'package:tri_flash/services/tts_service.dart';
 import 'package:tri_flash/services/word_service.dart';
 import 'package:tri_flash/state/app_state.dart';
@@ -27,6 +35,8 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   late final MainScreenController _controller;
+  final AiGenerationService _aiGeneration = AiGenerationService();
+  final GeneratedTextHistoryService _history = GeneratedTextHistoryService();
 
   // Global keys used by the onboarding overlay to highlight UI elements.
   final GlobalKey _wordsCountKey = GlobalKey();
@@ -117,9 +127,8 @@ class _MainScreenState extends State<MainScreen> {
 
     return LayoutBuilder(
       builder: (context, constraints) {
-        final double minHeight = constraints.maxHeight.isFinite
-            ? constraints.maxHeight
-            : 0;
+        final double minHeight =
+            constraints.maxHeight.isFinite ? constraints.maxHeight : 0;
 
         final content = Column(
           mainAxisSize: MainAxisSize.min,
@@ -135,6 +144,7 @@ class _MainScreenState extends State<MainScreen> {
               onToggleTranscription: _controller.toggleTranscriptionVisibility,
               onToggleTranslation: _controller.toggleTranslationVisibility,
               onSpeakWord: () => _controller.speakCurrentWord(context),
+              onGenerateSentence: _generateSentence,
               wordsCountKey: _wordsCountKey,
               wordTileKey: _wordTileKey,
               ttsButtonKey: _ttsButtonKey,
@@ -145,9 +155,9 @@ class _MainScreenState extends State<MainScreen> {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
-                    builder: (context) => EditWordsScreen(
-                      initialSearch: word['word'],
-                    ),
+                    builder:
+                        (context) =>
+                            EditWordsScreen(initialSearch: word['word']),
                   ),
                 ).then((_) => _controller.loadSelectedCategories());
               },
@@ -201,15 +211,179 @@ class _MainScreenState extends State<MainScreen> {
         );
         await _controller.reloadTtsSettings();
         break;
+      case 'generate_text':
+        await _generateText();
+        break;
+      case 'text_history':
+        await Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const GeneratedTextHistoryScreen()),
+        );
+        break;
     }
+  }
+
+  Future<void> _generateSentence() async {
+    final word = _controller.currentWord;
+    if (word == null) return;
+    if (!await AiSetupFlow.ensureReady(context)) return;
+    if (!mounted) return;
+    _showLoading();
+    try {
+      final sentence = await _aiGeneration.generateSentence(
+        VocabularyEntry.fromMap(word),
+      );
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await showDialog<void>(
+        context: context,
+        builder:
+            (dialogContext) => AlertDialog(
+              title: Text(dialogContext.l10n.text('exampleSentence')),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    dialogContext.l10n.text('sourceText'),
+                    style: Theme.of(dialogContext).textTheme.labelLarge,
+                  ),
+                  SelectableText(sentence.source),
+                  const SizedBox(height: 16),
+                  Text(
+                    dialogContext.l10n.text('translationText'),
+                    style: Theme.of(dialogContext).textTheme.labelLarge,
+                  ),
+                  SelectableText(sentence.translation),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () async {
+                    await Clipboard.setData(
+                      ClipboardData(
+                        text: '${sentence.source}\n${sentence.translation}',
+                      ),
+                    );
+                    if (dialogContext.mounted) {
+                      ScaffoldMessenger.of(dialogContext).showSnackBar(
+                        SnackBar(
+                          content: Text(dialogContext.l10n.text('copied')),
+                        ),
+                      );
+                    }
+                  },
+                  child: Text(dialogContext.l10n.text('copy')),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.pop(dialogContext);
+                    _generateSentence();
+                  },
+                  child: Text(dialogContext.l10n.text('regenerate')),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(dialogContext),
+                  child: Text(dialogContext.l10n.text('close')),
+                ),
+              ],
+            ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showAiError(error);
+    }
+  }
+
+  Future<void> _generateText() async {
+    if (!await AiSetupFlow.ensureReady(context)) return;
+    if (!mounted) return;
+    final options = await showModalBottomSheet<TextGenerationOptions>(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (_) => TextGenerationSheet(
+            categories: _controller.categories,
+            initialSelection: _controller.selectedCategories,
+          ),
+    );
+    if (options == null || !mounted) return;
+    final maps = await _controller.loadActiveWordsForCategories(
+      options.categories,
+    );
+    if (!mounted) return;
+    final vocabulary = maps.map(VocabularyEntry.fromMap).toList();
+    if (vocabulary.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.text('noWords'))));
+      return;
+    }
+    _showLoading();
+    try {
+      final generated = await _aiGeneration.generateText(
+        availableVocabulary: vocabulary,
+        categories: options.categories,
+        targetWordCount: options.targetWordCount,
+        outsideVocabularyPercent: options.outsideVocabularyPercent,
+      );
+      await _history.add(generated);
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => GeneratedTextViewerScreen(text: generated),
+        ),
+      );
+    } catch (error) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showAiError(error);
+    }
+  }
+
+  void _showLoading() {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (context) => AlertDialog(
+            content: Row(
+              children: [
+                const CircularProgressIndicator(),
+                const SizedBox(width: 20),
+                Expanded(child: Text(context.l10n.text('generating'))),
+              ],
+            ),
+          ),
+    );
+  }
+
+  void _showAiError(Object error) {
+    showDialog<void>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(context.l10n.text('aiError')),
+            content: Text('$error'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(context.l10n.text('close')),
+              ),
+            ],
+          ),
+    );
   }
 
   Future<void> _duplicateToSpecialCategory() async {
     final success = await _controller.duplicateCurrentWordToSpecialCategory();
     Fluttertoast.showToast(
-      msg: success
-          ? 'Word duplicated to !! category'
-          : 'This word is already in the !! category',
+      msg:
+          success
+              ? 'Word duplicated to !! category'
+              : 'This word is already in the !! category',
       toastLength: Toast.LENGTH_SHORT,
       gravity: ToastGravity.BOTTOM,
     );
@@ -227,13 +401,14 @@ class _MainScreenState extends State<MainScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => CategorySelectionModal(
-        categories: _controller.categories,
-        selectedCategories: _controller.selectedCategories,
-        onSelectionChanged: (categories) async {
-          await _controller.applySelectedCategories(categories);
-        },
-      ),
+      builder:
+          (context) => CategorySelectionModal(
+            categories: _controller.categories,
+            selectedCategories: _controller.selectedCategories,
+            onSelectionChanged: (categories) async {
+              await _controller.applySelectedCategories(categories);
+            },
+          ),
     );
   }
 
@@ -241,10 +416,11 @@ class _MainScreenState extends State<MainScreen> {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
-      builder: (context) => DisplaySelectionModal(
-        currentSelection: _controller.state.defaultVisibleLanguage,
-        onSelectionChanged: _controller.setDefaultVisibleLanguage,
-      ),
+      builder:
+          (context) => DisplaySelectionModal(
+            currentSelection: _controller.state.defaultVisibleLanguage,
+            onSelectionChanged: _controller.setDefaultVisibleLanguage,
+          ),
     );
   }
 }
