@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:math';
 
+import 'package:flutter/foundation.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/services/ai/ai_provider_client.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
@@ -22,6 +23,57 @@ class AiGenerationProgress {
 }
 
 typedef AiProgressCallback = void Function(AiGenerationProgress progress);
+
+class AiAnnotationException implements Exception {
+  const AiAnnotationException({
+    required this.stage,
+    required this.chunk,
+    required this.totalChunks,
+  });
+
+  final AiGenerationStage stage;
+  final int chunk;
+  final int totalChunks;
+
+  @override
+  String toString() =>
+      'AI annotation failed for ${stage == AiGenerationStage.annotatingSource ? 'the original' : 'the translation'} '
+      '(chunk $chunk/$totalChunks) after two attempts. Nothing was saved.';
+}
+
+enum _AnnotationFailure {
+  malformedResponse,
+  missingDetails,
+  nonLexicalSurface,
+  alteredSurface,
+  duplicatedOrOutOfOrder,
+  omittedOrOutOfOrder,
+  omittedWord,
+}
+
+class _AnnotationValidationException implements Exception {
+  const _AnnotationValidationException(this.failure, this.offset);
+
+  final _AnnotationFailure failure;
+  final int offset;
+
+  String get repairHint => switch (failure) {
+    _AnnotationFailure.malformedResponse =>
+      'Return exactly the requested JSON object with a words array.',
+    _AnnotationFailure.missingDetails =>
+      'Every word must have a non-empty surface, pronunciation, and contextualTranslation.',
+    _AnnotationFailure.nonLexicalSurface =>
+      'Return lexical word surfaces only. Exclude adjacent punctuation, whitespace, and standalone symbols.',
+    _AnnotationFailure.alteredSurface =>
+      'A returned surface was altered or invented. Copy every surface exactly from the input without normalizing or rewriting characters.',
+    _AnnotationFailure.duplicatedOrOutOfOrder =>
+      'A returned word was duplicated or placed out of order. Include every lexical word exactly once and in its original order.',
+    _AnnotationFailure.omittedOrOutOfOrder =>
+      'A lexical word before the next returned surface was omitted or the words are out of order. Include every lexical word exactly once and in order.',
+    _AnnotationFailure.omittedWord =>
+      'One or more lexical words at the end were omitted. Include every lexical word exactly once and in order.',
+  };
+}
 
 class AiGenerationService {
   AiGenerationService({
@@ -239,47 +291,104 @@ ${jsonEncode(forbidden)}
         AiGenerationProgress(stage, current: index + 1, total: chunks.length),
       );
       final chunk = chunks[index];
-      final data = await _generateJson(
+      final chunkAnnotations = await _generateAnnotations(
+        text: chunk,
+        globalOffset: globalOffset,
+        chunk: index + 1,
+        totalChunks: chunks.length,
+        stage: stage,
+        textLanguage: textLanguage,
+        translationLanguage: translationLanguage,
         provider: provider,
-        maxOutputTokens: annotationOutputTokens,
         cancellationToken: cancellationToken,
-        prompt: '''
-Segment the exact text below in order. Preserve every character exactly once.
+      );
+      annotations.addAll(chunkAnnotations);
+      globalOffset += chunk.length;
+    }
+    return annotations;
+  }
+
+  Future<List<WordAnnotation>> _generateAnnotations({
+    required String text,
+    required int globalOffset,
+    required int chunk,
+    required int totalChunks,
+    required AiGenerationStage stage,
+    required String textLanguage,
+    required String translationLanguage,
+    required AiProviderType provider,
+    required AiCancellationToken cancellationToken,
+  }) async {
+    final prompt = '''
+Identify every lexical word in the exact text below, in its original order.
 
 Requirements:
 - Text language: $textLanguage.
 - Contextual translations must be in $translationLanguage.
-- Emit every lexical word/token as its own segment with isWord true.
-- Whitespace, punctuation, and standalone symbols must be separate isWord false segments.
+- Return every lexical word exactly once and in order.
+- Copy each surface exactly from the input. Do not normalize, correct, or rewrite any character.
+- Do not return whitespace, adjacent punctuation, or standalone symbols.
+- A lexical surface may contain internal apostrophes, hyphens, or combining marks when they are part of the displayed word.
 - For each word, provide learner-friendly pronunciation (pinyin, romaji, standard transliteration, or IPA as appropriate) and its concise contextual translation.
-- surface values concatenated in order must reconstruct the input exactly.
-- Return exactly: {"segments":[{"surface":"...","isWord":true,"pronunciation":"...","contextualTranslation":"..."}]}
+- Return exactly: {"words":[{"surface":"...","pronunciation":"...","contextualTranslation":"..."}]}
 
 Exact input text:
-${jsonEncode(chunk)}
-''',
-        validate: (data) => _validateAnnotation(data, chunk),
-      );
-      var localOffset = 0;
-      for (final segment
-          in (data['segments'] as List<dynamic>).cast<Map<String, dynamic>>()) {
-        final surface = segment['surface'] as String;
-        if (segment['isWord'] == true) {
-          annotations.add(
-            WordAnnotation(
-              start: globalOffset + localOffset,
-              end: globalOffset + localOffset + surface.length,
-              surface: surface,
-              pronunciation: segment['pronunciation'] as String,
-              contextualTranslation: segment['contextualTranslation'] as String,
-            ),
+${jsonEncode(text)}
+''';
+    _AnnotationValidationException? lastValidation;
+    for (var attempt = 0; attempt < 2; attempt++) {
+      cancellationToken.throwIfCancelled();
+      try {
+        final client = await (_clientFactory ??
+                AiProviderClientFactory(settings))
+            .create(provider);
+        final raw = await client.generate(
+          attempt == 0
+              ? prompt
+              : '$prompt\nThe previous annotation was invalid. ${lastValidation?.repairHint ?? _AnnotationValidationException(_AnnotationFailure.malformedResponse, 0).repairHint} Return only complete valid JSON.',
+          maxOutputTokens: annotationOutputTokens,
+          cancellationToken: cancellationToken,
+        );
+        final data = _decodeJsonObject(raw);
+        final words = data['words'];
+        if (words is! List) {
+          throw const _AnnotationValidationException(
+            _AnnotationFailure.malformedResponse,
+            0,
           );
         }
-        localOffset += surface.length;
+        return alignAnnotationWords(text, words, globalOffset: globalOffset);
+      } on AiGenerationCancelled {
+        rethrow;
+      } on AiProviderException catch (error) {
+        if (!error.isTransient || attempt == 1) rethrow;
+      } on _AnnotationValidationException catch (error) {
+        lastValidation = error;
+      } catch (_) {
+        lastValidation = const _AnnotationValidationException(
+          _AnnotationFailure.malformedResponse,
+          0,
+        );
       }
-      globalOffset += chunk.length;
     }
-    return annotations;
+    final failure =
+        lastValidation ??
+        const _AnnotationValidationException(
+          _AnnotationFailure.malformedResponse,
+          0,
+        );
+    if (kDebugMode) {
+      debugPrint(
+        'AI annotation validation failed: stage=${stage.name} '
+        'chunk=$chunk/$totalChunks category=${failure.failure.name} '
+        'offset=${failure.offset}',
+      );
+    }
+    throw AiAnnotationException(
+      stage: stage,
+      chunk: chunk,
+      totalChunks: totalChunks,
+    );
   }
 
   Future<Map<String, dynamic>> _generateJson({
@@ -356,39 +465,75 @@ ${jsonEncode(chunk)}
     }
   }
 
-  static void _validateAnnotation(Map<String, dynamic> data, String text) {
-    final segments = data['segments'];
-    if (segments is! List || segments.isEmpty) {
-      throw const FormatException('Missing annotation segments.');
+  @visibleForTesting
+  static List<WordAnnotation> alignAnnotationWords(
+    String text,
+    List<dynamic> words, {
+    int globalOffset = 0,
+  }) {
+    final annotations = <WordAnnotation>[];
+    var cursor = 0;
+    for (final raw in words) {
+      if (raw is! Map<String, dynamic>) {
+        throw _AnnotationValidationException(
+          _AnnotationFailure.malformedResponse,
+          cursor,
+        );
+      }
+      final surface = raw['surface'];
+      final pronunciation = raw['pronunciation'];
+      final translation = raw['contextualTranslation'];
+      if (surface is! String ||
+          surface.isEmpty ||
+          pronunciation is! String ||
+          pronunciation.trim().isEmpty ||
+          translation is! String ||
+          translation.trim().isEmpty) {
+        throw _AnnotationValidationException(
+          _AnnotationFailure.missingDetails,
+          cursor,
+        );
+      }
+      if (!_isLexicalSurface(surface)) {
+        throw _AnnotationValidationException(
+          _AnnotationFailure.nonLexicalSurface,
+          cursor,
+        );
+      }
+      final start = text.indexOf(surface, cursor);
+      if (start < 0) {
+        throw _AnnotationValidationException(
+          text.contains(surface)
+              ? _AnnotationFailure.duplicatedOrOutOfOrder
+              : _AnnotationFailure.alteredSurface,
+          cursor,
+        );
+      }
+      if (_containsLexicalText(text.substring(cursor, start))) {
+        throw _AnnotationValidationException(
+          _AnnotationFailure.omittedOrOutOfOrder,
+          cursor,
+        );
+      }
+      final end = start + surface.length;
+      annotations.add(
+        WordAnnotation(
+          start: globalOffset + start,
+          end: globalOffset + end,
+          surface: text.substring(start, end),
+          pronunciation: pronunciation,
+          contextualTranslation: translation,
+        ),
+      );
+      cursor = end;
     }
-    final reconstructed = StringBuffer();
-    for (final raw in segments) {
-      if (raw is! Map<String, dynamic> ||
-          raw['surface'] is! String ||
-          raw['isWord'] is! bool) {
-        throw const FormatException('Invalid annotation segment.');
-      }
-      final surface = raw['surface'] as String;
-      if (surface.isEmpty) {
-        throw const FormatException('Annotation segments cannot be empty.');
-      }
-      reconstructed.write(surface);
-      if (raw['isWord'] == true) {
-        if ((raw['pronunciation'] is! String) ||
-            (raw['pronunciation'] as String).trim().isEmpty ||
-            (raw['contextualTranslation'] is! String) ||
-            (raw['contextualTranslation'] as String).trim().isEmpty) {
-          throw const FormatException('A word annotation is incomplete.');
-        }
-      } else if (_containsLexicalText(surface)) {
-        throw const FormatException('A lexical token was left unannotated.');
-      }
-    }
-    if (reconstructed.toString() != text) {
-      throw const FormatException(
-        'Annotation segments do not reconstruct the generated text.',
+    if (_containsLexicalText(text.substring(cursor))) {
+      throw _AnnotationValidationException(
+        _AnnotationFailure.omittedWord,
+        cursor,
       );
     }
+    return annotations;
   }
 
   static String _requiredString(Map<String, dynamic> data, String key) {
@@ -480,9 +625,46 @@ ${jsonEncode(chunk)}
     return previousIsHighSurrogate && nextIsLowSurrogate ? offset - 1 : offset;
   }
 
-  static bool _containsLexicalText(String text) => RegExp(
-    r'[A-Za-zÀ-ÖØ-öø-ÿĀ-žΑ-ωА-Яа-я\u0590-\u05FF\u0600-\u06FF\u3400-\u9FFF\u3040-\u30FF\uAC00-\uD7AF0-9]',
-  ).hasMatch(text);
+  static bool _containsLexicalText(String text) =>
+      text.runes.any(_isLexicalRune);
+
+  static bool _isLexicalSurface(String surface) {
+    final runes = surface.runes;
+    if (runes.isEmpty) return false;
+    return _isLexicalRune(runes.first) && _isLexicalRune(runes.last);
+  }
+
+  static bool _isLexicalRune(int rune) {
+    if (rune == 0xD7 || rune == 0xF7 || rune == 0x37E || rune == 0x387) {
+      return false;
+    }
+    return (rune >= 0x30 && rune <= 0x39) ||
+        (rune >= 0x41 && rune <= 0x5A) ||
+        (rune >= 0x61 && rune <= 0x7A) ||
+        (rune >= 0xC0 && rune <= 0x2AF) ||
+        (rune >= 0x300 && rune <= 0x36F) ||
+        (rune >= 0x370 && rune <= 0x52F) ||
+        (rune >= 0x591 && rune <= 0x5BD) ||
+        rune == 0x5BF ||
+        (rune >= 0x5C1 && rune <= 0x5C2) ||
+        (rune >= 0x5C4 && rune <= 0x5C5) ||
+        rune == 0x5C7 ||
+        (rune >= 0x5D0 && rune <= 0x5EA) ||
+        (rune >= 0x610 && rune <= 0x61A) ||
+        (rune >= 0x620 && rune <= 0x63F) ||
+        (rune >= 0x641 && rune <= 0x65F) ||
+        (rune >= 0x660 && rune <= 0x669) ||
+        (rune >= 0x670 && rune <= 0x6D3) ||
+        (rune >= 0x6D5 && rune <= 0x6ED) ||
+        (rune >= 0x6EE && rune <= 0x6FC) ||
+        (rune >= 0x6F0 && rune <= 0x6F9) ||
+        (rune >= 0x3041 && rune <= 0x3096) ||
+        (rune >= 0x30A1 && rune <= 0x30FA) ||
+        rune == 0x30FC ||
+        (rune >= 0x3400 && rune <= 0x9FFF) ||
+        (rune >= 0xAC00 && rune <= 0xD7AF) ||
+        (rune >= 0xFB1D && rune <= 0xFB4F);
+  }
 
   static int estimateWordCount(String text) {
     final cjk =

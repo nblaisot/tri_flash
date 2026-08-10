@@ -52,21 +52,13 @@ String _analysis(List<VocabularyEntry> entries) => jsonEncode({
   ],
 });
 
-String _annotations(List<Map<String, Object>> segments) =>
-    jsonEncode({'segments': segments});
+String _annotations(List<Map<String, Object>> words) =>
+    jsonEncode({'words': words});
 
 Map<String, Object> _word(String surface, String translation) => {
   'surface': surface,
-  'isWord': true,
   'pronunciation': 'pron-$surface',
   'contextualTranslation': translation,
-};
-
-Map<String, Object> _separator(String surface) => {
-  'surface': surface,
-  'isWord': false,
-  'pronunciation': '',
-  'contextualTranslation': '',
 };
 
 void main() {
@@ -149,16 +141,8 @@ void main() {
     final client = _FakeClient([
       _analysis(entries),
       jsonEncode({'source': 'Salut ami', 'translation': 'Hello friend'}),
-      _annotations([
-        _word('Salut', 'Hello'),
-        _separator(' '),
-        _word('ami', 'friend'),
-      ]),
-      _annotations([
-        _word('Hello', 'Salut'),
-        _separator(' '),
-        _word('friend', 'ami'),
-      ]),
+      _annotations([_word('Salut', 'Hello'), _word('ami', 'friend')]),
+      _annotations([_word('Hello', 'Salut'), _word('friend', 'ami')]),
     ]);
     final service = AiGenerationService(
       settings: settings,
@@ -197,7 +181,7 @@ void main() {
       transcription: '',
       translation: 'hello',
     );
-    final invalid = _annotations([_separator('Salut')]);
+    final invalid = _annotations([]);
     final client = _FakeClient([
       _analysis([entry]),
       jsonEncode({'source': 'Salut', 'translation': 'Hello'}),
@@ -216,7 +200,7 @@ void main() {
         targetWordCount: 20,
         outsideVocabularyPercent: 5,
       ),
-      throwsFormatException,
+      throwsA(isA<AiAnnotationException>()),
     );
   });
 
@@ -237,16 +221,12 @@ void main() {
       }),
       _annotations([
         _word('été', 'summer'),
-        _separator(' '),
         _word('مرحبا', 'hello'),
-        _separator(' '),
         _word('世界', 'world'),
       ]),
       _annotations([
         _word('summer', 'été'),
-        _separator(' '),
         _word('hello', 'مرحبا'),
-        _separator(' '),
         _word('world', '世界'),
       ]),
     ]);
@@ -268,6 +248,202 @@ void main() {
       '世界',
     ]);
     expect(result.sourceAnnotations.last.end, result.source.length);
+  });
+
+  test('aligns words while preserving punctuation and whitespace locally', () {
+    const text = ' \nBonjour, l’été — مرحبا، שָׁלוֹם! 世界。Bonjour ';
+    final words = [
+      _word('Bonjour', 'Hello'),
+      _word('l’été', 'the summer'),
+      _word('مرحبا', 'hello'),
+      _word('שָׁלוֹם', 'peace'),
+      _word('世界', 'world'),
+      _word('Bonjour', 'Hello'),
+    ];
+
+    final annotations = AiGenerationService.alignAnnotationWords(text, words);
+
+    expect(annotations.map((item) => item.surface), [
+      'Bonjour',
+      'l’été',
+      'مرحبا',
+      'שָׁלוֹם',
+      '世界',
+      'Bonjour',
+    ]);
+    for (final annotation in annotations) {
+      expect(
+        text.substring(annotation.start, annotation.end),
+        annotation.surface,
+      );
+    }
+    expect(annotations.first.start, 2);
+    expect(annotations.last.start, text.lastIndexOf('Bonjour'));
+  });
+
+  test('applies global offsets without including separators', () {
+    const text = 'Hello, world!';
+    final annotations = AiGenerationService.alignAnnotationWords(text, [
+      _word('Hello', 'Bonjour'),
+      _word('world', 'monde'),
+    ], globalOffset: 120);
+
+    expect(annotations.first.start, 120);
+    expect(annotations.first.end, 125);
+    expect(annotations.last.start, 127);
+    expect(annotations.last.end, 132);
+  });
+
+  test('rejects omitted, altered, reordered, duplicate, and invalid words', () {
+    final invalidWordLists = <List<Map<String, Object>>>[
+      [_word('one', 'un'), _word('three', 'trois')],
+      [_word('One', 'un'), _word('two', 'deux'), _word('three', 'trois')],
+      [_word('two', 'deux'), _word('one', 'un'), _word('three', 'trois')],
+      [
+        _word('one', 'un'),
+        _word('two', 'deux'),
+        _word('three', 'trois'),
+        _word('three', 'trois'),
+      ],
+      [_word('one,', 'un'), _word('two', 'deux'), _word('three', 'trois')],
+      [
+        {'surface': 'one', 'pronunciation': '', 'contextualTranslation': 'un'},
+        _word('two', 'deux'),
+        _word('three', 'trois'),
+      ],
+      [
+        {
+          'surface': ',',
+          'pronunciation': 'comma',
+          'contextualTranslation': 'virgule',
+        },
+      ],
+    ];
+
+    for (final words in invalidWordLists) {
+      expect(
+        () => AiGenerationService.alignAnnotationWords('one two three', words),
+        throwsA(isA<Exception>()),
+      );
+    }
+  });
+
+  test('targeted retry recovers an omitted word annotation', () async {
+    final settings = AiSettingsService();
+    const entry = VocabularyEntry(
+      id: 1,
+      category: 'test',
+      word: 'bonjour',
+      transcription: '',
+      translation: 'hello',
+    );
+    final client = _FakeClient([
+      _analysis([entry]),
+      jsonEncode({'source': 'Salut ami', 'translation': 'Hello friend'}),
+      _annotations([_word('Salut', 'Hello')]),
+      _annotations([_word('Salut', 'Hello'), _word('ami', 'friend')]),
+      _annotations([_word('Hello', 'Salut'), _word('friend', 'ami')]),
+    ]);
+    final service = AiGenerationService(
+      settings: settings,
+      clientFactory: _FakeFactory(settings, client),
+    );
+
+    final result = await service.generateText(
+      availableVocabulary: const [entry],
+      categories: const ['test'],
+      targetWordCount: 20,
+      outsideVocabularyPercent: 5,
+    );
+
+    expect(result.sourceAnnotations, hasLength(2));
+    expect(client.calls, 5);
+    expect(client.prompts[3], contains('at the end were omitted'));
+  });
+
+  test('annotation failure identifies the language stage and chunk', () async {
+    final settings = AiSettingsService();
+    const entry = VocabularyEntry(
+      id: 1,
+      category: 'test',
+      word: 'bonjour',
+      transcription: '',
+      translation: 'hello',
+    );
+    final client = _FakeClient([
+      _analysis([entry]),
+      jsonEncode({'source': 'Salut', 'translation': 'Hello'}),
+      _annotations([]),
+      _annotations([]),
+    ]);
+    final service = AiGenerationService(
+      settings: settings,
+      clientFactory: _FakeFactory(settings, client),
+    );
+
+    try {
+      await service.generateText(
+        availableVocabulary: const [entry],
+        categories: const ['test'],
+        targetWordCount: 20,
+        outsideVocabularyPercent: 5,
+      );
+      fail('Expected annotation generation to fail.');
+    } on AiAnnotationException catch (error) {
+      expect(error.stage, AiGenerationStage.annotatingSource);
+      expect(error.chunk, 1);
+      expect(error.totalChunks, 1);
+    }
+  });
+
+  test('maintains exact global offsets across multiple chunks', () async {
+    final settings = AiSettingsService();
+    const entry = VocabularyEntry(
+      id: 1,
+      category: 'test',
+      word: 'mot',
+      transcription: '',
+      translation: 'word',
+    );
+    final source = List.generate(90, (index) => 'mot$index').join(' ');
+    final translation = List.generate(90, (index) => 'word$index').join(' ');
+    final responses = <Object>[
+      _analysis([entry]),
+      jsonEncode({'source': source, 'translation': translation}),
+    ];
+    for (final text in [source, translation]) {
+      for (final chunk in AiGenerationService.chunkText(text)) {
+        responses.add(
+          _annotations([
+            for (final match in RegExp(r'[A-Za-z0-9]+').allMatches(chunk))
+              _word(match.group(0)!, 'translation'),
+          ]),
+        );
+      }
+    }
+    final service = AiGenerationService(
+      settings: settings,
+      clientFactory: _FakeFactory(settings, _FakeClient(responses)),
+    );
+
+    final result = await service.generateText(
+      availableVocabulary: const [entry],
+      categories: const ['test'],
+      targetWordCount: 500,
+      outsideVocabularyPercent: 5,
+    );
+
+    expect(result.sourceAnnotations, hasLength(90));
+    expect(result.translationAnnotations, hasLength(90));
+    expect(result.sourceAnnotations.last.end, source.length);
+    expect(result.translationAnnotations.last.end, translation.length);
+    expect(
+      result.source.substring(
+        result.sourceAnnotations[80].start,
+        result.sourceAnnotations[80].end,
+      ),
+      'mot80',
+    );
   });
 
   test('batches every corpus entry without random omission', () {

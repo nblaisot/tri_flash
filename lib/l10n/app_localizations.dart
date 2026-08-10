@@ -53,6 +53,10 @@ class AppLocalizations {
       'annotatingTranslation': 'Annotating translation ({current}/{total})…',
       'savingGeneratedText': 'Saving…',
       'generationCancelled': 'Generation cancelled',
+      'sourceAnnotationFailed':
+          'AI could not annotate every word in the original text (chunk {current}/{total}) after two attempts. Nothing was saved. Please try again.',
+      'translationAnnotationFailed':
+          'AI could not annotate every word in the translation (chunk {current}/{total}) after two attempts. Nothing was saved. Please try again.',
       'noCategories': 'Select at least one category.',
       'noWords': 'No active words were found in those categories.',
       'aiProvider': 'AI provider',
@@ -137,6 +141,10 @@ class AppLocalizations {
           'Annotation de la traduction ({current}/{total})…',
       'savingGeneratedText': 'Enregistrement…',
       'generationCancelled': 'Génération annulée',
+      'sourceAnnotationFailed':
+          'L’IA n’a pas pu annoter chaque mot du texte original (segment {current}/{total}) après deux tentatives. Rien n’a été enregistré. Veuillez réessayer.',
+      'translationAnnotationFailed':
+          'L’IA n’a pas pu annoter chaque mot de la traduction (segment {current}/{total}) après deux tentatives. Rien n’a été enregistré. Veuillez réessayer.',
       'noCategories': 'Sélectionnez au moins une catégorie.',
       'noWords': 'Aucun mot actif dans ces catégories.',
       'aiProvider': 'Fournisseur d’IA',

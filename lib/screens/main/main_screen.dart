@@ -362,6 +362,10 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.text('generationCancelled'))),
       );
+    } on AiAnnotationException catch (error) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showAnnotationError(error);
     } catch (error) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
@@ -372,6 +376,32 @@ class _MainScreenState extends State<MainScreen> {
       }
       progress.dispose();
     }
+  }
+
+  void _showAnnotationError(AiAnnotationException error) {
+    final key =
+        error.stage == AiGenerationStage.annotatingSource
+            ? 'sourceAnnotationFailed'
+            : 'translationAnnotationFailed';
+    showDialog<void>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(context.l10n.text('aiError')),
+            content: Text(
+              context.l10n.text(key, {
+                'current': error.chunk,
+                'total': error.totalChunks,
+              }),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text(context.l10n.text('close')),
+              ),
+            ],
+          ),
+    );
   }
 
   void _showGenerationProgress(
