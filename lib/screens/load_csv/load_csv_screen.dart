@@ -8,6 +8,7 @@ import 'package:url_launcher/url_launcher.dart';
 
 import 'package:tri_flash/screens/qr_scan/qr_scan_screen.dart';
 import 'package:tri_flash/services/database_helper.dart';
+import 'package:tri_flash/services/vocabulary_import_service.dart';
 
 /// Screen that handles importing CSV/TSV data from different sources.
 class LoadCsvScreen extends StatefulWidget {
@@ -185,28 +186,8 @@ When loading, you can "Replace" or "Merge" the new content.
   }
 
   /// Parse CSV/TSV payload into rows of strings.
-  List<List<String>> parseCsvData(
-    String csvData, {
-    String delimiter = '\t',
-    String eol = '\n',
-  }) {
-    final csvList = <List<String>>[];
-
-    List<String> lines = csvData.split(eol).where((line) => line.trim().isNotEmpty).toList();
-    if (lines.isNotEmpty) {
-      lines = lines.sublist(1);
-    }
-
-    for (final line in lines) {
-      final fields = line.split(delimiter);
-      while (fields.length < 4) {
-        fields.add('');
-      }
-      final trimmed = fields.map((field) => field.trim()).toList();
-      csvList.add(trimmed);
-    }
-
-    return csvList;
+  List<List<String>> parseCsvData(String csvData) {
+    return VocabularyImportService.parseTsv(csvData);
   }
 
   void _scanQRCode() {
@@ -240,7 +221,7 @@ When loading, you can "Replace" or "Merge" the new content.
       return;
     }
 
-    final processedUrl = _processUrl(url);
+    final processedUrl = VocabularyImportService.normalizePublishedUrl(url);
 
     setState(() => _isLoading = true);
     try {
@@ -302,15 +283,6 @@ When loading, you can "Replace" or "Merge" the new content.
         ],
       ),
     );
-  }
-
-  String _processUrl(String url) {
-    if (url.endsWith('/pubhtml')) {
-      return url.replaceFirst('/pubhtml', '/pub?output=tsv');
-    } else if (RegExp(r'/pubhtml\\?gid=[0-9]+&single=true$').hasMatch(url)) {
-      return '${url.replaceFirst('pubhtml', 'pub')}&output=tsv';
-    }
-    return url;
   }
 
   Future<void> _insertCsvDataIntoDatabase(
