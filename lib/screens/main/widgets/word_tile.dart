@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 
+/// Card widget that toggles visibility of a piece of information (word, transcription, translation).
 class WordTile extends StatelessWidget {
-  final String label;
-  final String word;
-  final bool isVisible;
-  final VoidCallback onToggle;
-  final Widget? trailing;
-
   const WordTile({
-    Key? key,
+    super.key,
     required this.label,
     required this.word,
     required this.isVisible,
     required this.onToggle,
     this.trailing,
-  }) : super(key: key);
+  });
+
+  final String label;
+  final String word;
+  final bool isVisible;
+  final VoidCallback onToggle;
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
@@ -34,12 +35,12 @@ class WordTile extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: isVisible
               ? FittedBox(
-            fit: BoxFit.scaleDown,
-            child: Text(
-              word,
-              style: const TextStyle(fontSize: 24, color: Colors.black),
-            ),
-          )
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    word,
+                    style: const TextStyle(fontSize: 24, color: Colors.black),
+                  ),
+                )
               : null,
         ),
         trailing: trailing,

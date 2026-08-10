@@ -1,0 +1,24 @@
+import 'package:flutter/material.dart';
+import 'package:tri_flash/screens/main/main_screen.dart';
+
+/// Root widget for the Tri Flash application.
+///
+/// Keeping the [MaterialApp] definition in its own file makes it easier to
+/// locate global configuration (theme, routes, etc.) and keeps `main.dart`
+/// focused on bootstrapping the app.
+class TriFlashApp extends StatelessWidget {
+  const TriFlashApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Tri Flash',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        primarySwatch: Colors.blue,
+        visualDensity: VisualDensity.adaptivePlatformDensity,
+      ),
+      home: const MainScreen(),
+    );
+  }
+}

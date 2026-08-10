@@ -1,19 +1,20 @@
 import 'package:flutter/material.dart';
 
+/// Modal bottom sheet allowing the user to pick which categories are active.
 class CategorySelectionModal extends StatefulWidget {
+  const CategorySelectionModal({
+    super.key,
+    required this.categories,
+    required this.selectedCategories,
+    required this.onSelectionChanged,
+  });
+
   final List<String> categories;
   final List<String> selectedCategories;
   final Function(List<String>) onSelectionChanged;
 
-  const CategorySelectionModal({
-    Key? key,
-    required this.categories,
-    required this.selectedCategories,
-    required this.onSelectionChanged,
-  }) : super(key: key);
-
   @override
-  _CategorySelectionModalState createState() => _CategorySelectionModalState();
+  State<CategorySelectionModal> createState() => _CategorySelectionModalState();
 }
 
 class _CategorySelectionModalState extends State<CategorySelectionModal> {
@@ -33,7 +34,7 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
       child: Column(
         children: [
           const Text(
-            "Select Categories",
+            'Select Categories',
             style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
@@ -41,8 +42,8 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
             child: ListView.builder(
               itemCount: widget.categories.length,
               itemBuilder: (context, index) {
-                String cat = widget.categories[index];
-                bool isSelected = _tempSelection.contains(cat);
+                final cat = widget.categories[index];
+                final isSelected = _tempSelection.contains(cat);
                 return CheckboxListTile(
                   activeColor: const Color(0xFFFFC107),
                   controlAffinity: ListTileControlAffinity.leading,
@@ -72,7 +73,7 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
               widget.onSelectionChanged(_tempSelection);
               Navigator.pop(context);
             },
-            child: const Text("Done"),
+            child: const Text('Done'),
           ),
         ],
       ),
