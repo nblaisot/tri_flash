@@ -49,7 +49,6 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
                 final cat = widget.categories[index];
                 final isSelected = _tempSelection.contains(cat);
                 return CheckboxListTile(
-                  activeColor: const Color(0xFFFFC107),
                   controlAffinity: ListTileControlAffinity.leading,
                   title: Text(
                     cat,

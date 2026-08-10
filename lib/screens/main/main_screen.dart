@@ -20,6 +20,7 @@ import 'package:tri_flash/screens/main/widgets/word_content_section.dart';
 import 'package:tri_flash/screens/settings/settings_screen.dart';
 import 'package:tri_flash/services/csv_service.dart';
 import 'package:tri_flash/services/ai/ai_generation_service.dart';
+import 'package:tri_flash/services/ai/ai_provider_client.dart';
 import 'package:tri_flash/services/ai/generated_text_history_service.dart';
 import 'package:tri_flash/services/tts_service.dart';
 import 'package:tri_flash/services/word_service.dart';
@@ -37,6 +38,7 @@ class _MainScreenState extends State<MainScreen> {
   late final MainScreenController _controller;
   final AiGenerationService _aiGeneration = AiGenerationService();
   final GeneratedTextHistoryService _history = GeneratedTextHistoryService();
+  AiCancellationToken? _activeGeneration;
 
   // Global keys used by the onboarding overlay to highlight UI elements.
   final GlobalKey _wordsCountKey = GlobalKey();
@@ -62,6 +64,7 @@ class _MainScreenState extends State<MainScreen> {
 
   @override
   void dispose() {
+    _activeGeneration?.cancel();
     _controller.dispose();
     super.dispose();
   }
@@ -93,6 +96,11 @@ class _MainScreenState extends State<MainScreen> {
                 displayButtonKey: _displayButtonKey,
               ),
               body: _buildBody(),
+              floatingActionButton: FloatingActionButton(
+                tooltip: context.l10n.text('generateText'),
+                onPressed: _generateText,
+                child: const Icon(Icons.auto_awesome),
+              ),
             ),
             if (state.showOnboarding)
               OnboardingOverlay(
@@ -172,7 +180,7 @@ class _MainScreenState extends State<MainScreen> {
         );
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+          padding: const EdgeInsets.fromLTRB(16, 24, 16, 112),
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
             child: Center(child: content),
@@ -320,15 +328,27 @@ class _MainScreenState extends State<MainScreen> {
       ).showSnackBar(SnackBar(content: Text(context.l10n.text('noWords'))));
       return;
     }
-    _showLoading();
+    final cancellationToken = AiCancellationToken();
+    _activeGeneration = cancellationToken;
+    final progress = ValueNotifier<AiGenerationProgress>(
+      const AiGenerationProgress(AiGenerationStage.analyzingCorpus),
+    );
+    _showGenerationProgress(progress, cancellationToken);
     try {
       final generated = await _aiGeneration.generateText(
         availableVocabulary: vocabulary,
         categories: options.categories,
         targetWordCount: options.targetWordCount,
         outsideVocabularyPercent: options.outsideVocabularyPercent,
+        cancellationToken: cancellationToken,
+        onProgress: (value) => progress.value = value,
       );
+      cancellationToken.throwIfCancelled();
       await _history.add(generated);
+      if (cancellationToken.isCancelled) {
+        await _history.remove(generated.id);
+        throw const AiGenerationCancelled();
+      }
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       await Navigator.of(context).push(
@@ -336,11 +356,67 @@ class _MainScreenState extends State<MainScreen> {
           builder: (_) => GeneratedTextViewerScreen(text: generated),
         ),
       );
+    } on AiGenerationCancelled {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.text('generationCancelled'))),
+      );
     } catch (error) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       _showAiError(error);
+    } finally {
+      if (identical(_activeGeneration, cancellationToken)) {
+        _activeGeneration = null;
+      }
+      progress.dispose();
     }
+  }
+
+  void _showGenerationProgress(
+    ValueNotifier<AiGenerationProgress> progress,
+    AiCancellationToken cancellationToken,
+  ) {
+    showDialog<void>(
+      context: context,
+      barrierDismissible: false,
+      builder:
+          (dialogContext) => AlertDialog(
+            content: ValueListenableBuilder<AiGenerationProgress>(
+              valueListenable: progress,
+              builder:
+                  (context, value, _) => Row(
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(width: 20),
+                      Expanded(child: Text(_progressLabel(context, value))),
+                    ],
+                  ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: cancellationToken.cancel,
+                child: Text(dialogContext.l10n.text('cancel')),
+              ),
+            ],
+          ),
+    );
+  }
+
+  String _progressLabel(BuildContext context, AiGenerationProgress progress) {
+    final values = {
+      if (progress.current != null) 'current': progress.current!,
+      if (progress.total != null) 'total': progress.total!,
+    };
+    final key = switch (progress.stage) {
+      AiGenerationStage.analyzingCorpus => 'analyzingCorpus',
+      AiGenerationStage.generatingText => 'generatingBilingualText',
+      AiGenerationStage.annotatingSource => 'annotatingSource',
+      AiGenerationStage.annotatingTranslation => 'annotatingTranslation',
+      AiGenerationStage.saving => 'savingGeneratedText',
+    };
+    return context.l10n.text(key, values);
   }
 
   void _showLoading() {

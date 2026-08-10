@@ -44,10 +44,7 @@ class _EditWordsScreenState extends State<EditWordsScreen> {
         return Scaffold(
           appBar: AppBar(title: const Text('Edit Words')),
           body: Column(
-            children: [
-              _buildSearchBar(),
-              Expanded(child: _buildWordList()),
-            ],
+            children: [_buildSearchBar(), Expanded(child: _buildWordList())],
           ),
         );
       },
@@ -85,10 +82,11 @@ class _EditWordsScreenState extends State<EditWordsScreen> {
           ),
           IconButton(
             icon: const Icon(Icons.add),
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => EditWordDialog(controller: _controller),
-            ),
+            onPressed:
+                () => showDialog<void>(
+                  context: context,
+                  builder: (_) => EditWordDialog(controller: _controller),
+                ),
           ),
         ],
       ),
@@ -114,21 +112,29 @@ class _EditWordsScreenState extends State<EditWordsScreen> {
               Text('${word['transcription']} - ${word['translation']}'),
               Text(
                 word['category'],
-                style: const TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontStyle: FontStyle.italic,
+                ),
               ),
             ],
           ),
           trailing: IconButton(
             icon: const Icon(Icons.edit),
-            onPressed: () => showDialog<void>(
-              context: context,
-              builder: (_) => EditWordDialog(
-                controller: _controller,
-                initialWord: word,
-              ),
-            ),
+            onPressed:
+                () => showDialog<void>(
+                  context: context,
+                  builder:
+                      (_) => EditWordDialog(
+                        controller: _controller,
+                        initialWord: word,
+                      ),
+                ),
           ),
-          tileColor: isActive ? Colors.white : Colors.grey[300],
+          tileColor:
+              isActive
+                  ? Theme.of(context).colorScheme.surface
+                  : Theme.of(context).colorScheme.surfaceContainerHighest,
           onLongPress: () => _controller.toggleWordActive(word['id'], isActive),
         );
       },

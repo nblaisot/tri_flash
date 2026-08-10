@@ -42,7 +42,6 @@ class DisplaySelectionModal extends StatelessWidget {
       title: Text(value),
       value: value,
       groupValue: currentSelection,
-      activeColor: const Color(0xFFFFC107),
       onChanged: (String? newValue) {
         if (newValue != null) {
           onSelectionChanged(newValue);

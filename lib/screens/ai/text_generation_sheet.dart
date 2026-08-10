@@ -29,14 +29,23 @@ class TextGenerationSheet extends StatefulWidget {
 }
 
 class _TextGenerationSheetState extends State<TextGenerationSheet> {
+  final _formKey = GlobalKey<FormState>();
   late List<String> _selected;
   double _wordCount = 20;
   double _outsidePercent = 5;
+  late final TextEditingController _wordCountController;
 
   @override
   void initState() {
     super.initState();
     _selected = List.from(widget.initialSelection);
+    _wordCountController = TextEditingController(text: '20');
+  }
+
+  @override
+  void dispose() {
+    _wordCountController.dispose();
+    super.dispose();
   }
 
   Future<void> _chooseCategories() async {
@@ -60,80 +69,126 @@ class _TextGenerationSheetState extends State<TextGenerationSheet> {
   Widget build(BuildContext context) {
     final l10n = context.l10n;
     return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          8,
-          20,
-          20 + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Center(
-              child: Container(
-                width: 36,
-                height: 4,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade400,
-                  borderRadius: BorderRadius.circular(2),
+      child: Form(
+        key: _formKey,
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            8,
+            20,
+            20 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Center(
+                child: Container(
+                  width: 36,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.outlineVariant,
+                    borderRadius: BorderRadius.circular(2),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              l10n.text('generateText'),
-              style: Theme.of(context).textTheme.titleLarge,
-            ),
-            const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: _chooseCategories,
-              icon: const Icon(Icons.category_outlined),
-              label: Text(
-                _selected.isEmpty
-                    ? l10n.text('selectCategories')
-                    : _selected.join(', '),
-                maxLines: 2,
-                overflow: TextOverflow.ellipsis,
+              const SizedBox(height: 16),
+              Text(
+                l10n.text('generateText'),
+                style: Theme.of(context).textTheme.titleLarge,
               ),
-            ),
-            const SizedBox(height: 12),
-            Text('${l10n.text('targetWordCount')}: ${_wordCount.round()}'),
-            Slider(
-              value: _wordCount,
-              min: 1,
-              max: 100,
-              divisions: 99,
-              label: '${_wordCount.round()}',
-              onChanged: (value) => setState(() => _wordCount = value),
-            ),
-            Text('${l10n.text('unknownWords')}: ${_outsidePercent.round()}%'),
-            Slider(
-              value: _outsidePercent,
-              min: 0,
-              max: 50,
-              divisions: 50,
-              label: '${_outsidePercent.round()}%',
-              onChanged: (value) => setState(() => _outsidePercent = value),
-            ),
-            const SizedBox(height: 12),
-            FilledButton.icon(
-              onPressed:
+              const SizedBox(height: 16),
+              OutlinedButton.icon(
+                onPressed: _chooseCategories,
+                icon: const Icon(Icons.category_outlined),
+                label: Text(
                   _selected.isEmpty
-                      ? null
-                      : () => Navigator.pop(
-                        context,
-                        TextGenerationOptions(
-                          categories: List.unmodifiable(_selected),
-                          targetWordCount: _wordCount.round(),
-                          outsideVocabularyPercent: _outsidePercent.round(),
+                      ? l10n.text('selectCategories')
+                      : _selected.join(', '),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+              const SizedBox(height: 12),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(l10n.text('targetWordCount')),
+                        Slider(
+                          value: _wordCount,
+                          min: 20,
+                          max: 500,
+                          divisions: 48,
+                          label: '${_wordCount.round()}',
+                          onChanged: (value) {
+                            setState(() => _wordCount = value);
+                            _wordCountController.text = '${value.round()}';
+                          },
                         ),
-                      ),
-              icon: const Icon(Icons.auto_awesome),
-              label: Text(l10n.text('generate')),
-            ),
-          ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  SizedBox(
+                    width: 88,
+                    child: TextFormField(
+                      controller: _wordCountController,
+                      keyboardType: TextInputType.number,
+                      textInputAction: TextInputAction.done,
+                      decoration: const InputDecoration(isDense: true),
+                      validator: (value) {
+                        final number = int.tryParse(value ?? '');
+                        if (number == null || number < 20 || number > 500) {
+                          return l10n.text('wordCountRange');
+                        }
+                        return null;
+                      },
+                      onChanged: (value) {
+                        final number = int.tryParse(value);
+                        if (number != null && number >= 20 && number <= 500) {
+                          setState(() => _wordCount = number.toDouble());
+                        }
+                      },
+                    ),
+                  ),
+                ],
+              ),
+              Text('${l10n.text('unknownWords')}: ${_outsidePercent.round()}%'),
+              Slider(
+                value: _outsidePercent,
+                min: 0,
+                max: 50,
+                divisions: 50,
+                label: '${_outsidePercent.round()}%',
+                onChanged: (value) => setState(() => _outsidePercent = value),
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed:
+                    _selected.isEmpty
+                        ? null
+                        : () {
+                          if (!_formKey.currentState!.validate()) return;
+                          Navigator.pop(
+                            context,
+                            TextGenerationOptions(
+                              categories: List.unmodifiable(_selected),
+                              targetWordCount: int.parse(
+                                _wordCountController.text,
+                              ),
+                              outsideVocabularyPercent: _outsidePercent.round(),
+                            ),
+                          );
+                        },
+                icon: const Icon(Icons.auto_awesome),
+                label: Text(l10n.text('generate')),
+              ),
+            ],
+          ),
         ),
       ),
     );

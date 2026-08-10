@@ -89,11 +89,11 @@ class _LoadCsvScreenState extends State<LoadCsvScreen> {
             const SizedBox(height: 20),
             TextButton(
               onPressed: _openExampleSheet,
-              child: const Text(
+              child: Text(
                 'Open an example',
                 style: TextStyle(
                   decoration: TextDecoration.underline,
-                  color: Colors.blue,
+                  color: Theme.of(context).colorScheme.primary,
                 ),
               ),
             ),
@@ -118,9 +118,10 @@ class _LoadCsvScreenState extends State<LoadCsvScreen> {
             ),
             ElevatedButton(
               onPressed: _isClipboardLoading ? null : _loadCsvFromClipboard,
-              child: _isClipboardLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Load from Clipboard'),
+              child:
+                  _isClipboardLoading
+                      ? const CircularProgressIndicator()
+                      : const Text('Load from Clipboard'),
             ),
           ],
         ),
@@ -131,37 +132,35 @@ class _LoadCsvScreenState extends State<LoadCsvScreen> {
   Widget _buildReloadButton() {
     return ElevatedButton(
       onPressed:
-          (_lastUrl != null && !_isLoading) ? () => _loadCsvFromUrl(_lastUrl!) : null,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: (_lastUrl != null) ? const Color(0xFFFFC107) : Colors.grey,
-      ),
-      child: _isLoading
-          ? const CircularProgressIndicator(color: Colors.white)
-          : const Text('Reload'),
+          (_lastUrl != null && !_isLoading)
+              ? () => _loadCsvFromUrl(_lastUrl!)
+              : null,
+      child:
+          _isLoading ? const CircularProgressIndicator() : const Text('Reload'),
     );
   }
 
   Widget _buildPairButton() {
     return ElevatedButton(
       onPressed:
-          (_isUrlValid && !_isLoading) ? () => _loadCsvFromUrl(_controller.text) : null,
-      style: ElevatedButton.styleFrom(
-        backgroundColor: _isUrlValid ? const Color(0xFFFFC107) : Colors.grey,
-      ),
-      child: _isLoading
-          ? const CircularProgressIndicator(color: Colors.white)
-          : const Text('Pair and load'),
+          (_isUrlValid && !_isLoading)
+              ? () => _loadCsvFromUrl(_controller.text)
+              : null,
+      child:
+          _isLoading
+              ? const CircularProgressIndicator()
+              : const Text('Pair and load'),
     );
   }
 
   void _showHelpDialog(BuildContext context) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('How to load words'),
-        content: const SingleChildScrollView(
-          child: Text(
-            """
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('How to load words'),
+            content: const SingleChildScrollView(
+              child: Text("""
 This is where you can load a list of words or pair your own Google Sheet.
 
 • 1st column: category
@@ -175,13 +174,15 @@ To pair your Google Sheet:
 • Click Pair and load
 
 When loading, you can "Replace" or "Merge" the new content.
-""",
+"""),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
           ),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-        ],
-      ),
     );
   }
 
@@ -194,9 +195,9 @@ When loading, you can "Replace" or "Merge" the new content.
     Navigator.push(
       context,
       MaterialPageRoute(
-        builder: (context) => QRScanScreen(
-          onUrlReceived: (url) => _loadCsvFromUrl(url),
-        ),
+        builder:
+            (context) =>
+                QRScanScreen(onUrlReceived: (url) => _loadCsvFromUrl(url)),
       ),
     );
   }
@@ -205,11 +206,8 @@ When loading, you can "Replace" or "Merge" the new content.
     setState(() => _isClipboardLoading = true);
     final data = await Clipboard.getData('text/plain');
     if (data != null && data.text!.isNotEmpty) {
-      final csvList = data.text!
-          .split('\n')
-          .skip(1)
-          .map((e) => e.split('\t'))
-          .toList();
+      final csvList =
+          data.text!.split('\n').skip(1).map((e) => e.split('\t')).toList();
       _showImportDialog(csvList);
     }
     setState(() => _isClipboardLoading = false);
@@ -235,7 +233,9 @@ When loading, you can "Replace" or "Merge" the new content.
         throw Exception('Failed to download the CSV file.');
       }
     } catch (e) {
-      _showErrorDialog('Failed to load CSV. Please check the URL and try again.\nError: $e');
+      _showErrorDialog(
+        'Failed to load CSV. Please check the URL and try again.\nError: $e',
+      );
     } finally {
       setState(() => _isLoading = false);
     }
@@ -244,44 +244,49 @@ When loading, you can "Replace" or "Merge" the new content.
   void _showUnsupportedUrlDialog() {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Error'),
-        content: RichText(
-          text: TextSpan(
-            style: Theme.of(context).textTheme.bodyMedium,
-            children: const [
-              TextSpan(
-                text:
-                    'URLs of google sheets is not supported. You should provide the URL of the "Published" Google Sheet (menu File / Share / Publish to web), in ',
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Error'),
+            content: RichText(
+              text: TextSpan(
+                style: Theme.of(context).textTheme.bodyMedium,
+                children: const [
+                  TextSpan(
+                    text:
+                        'URLs of google sheets is not supported. You should provide the URL of the "Published" Google Sheet (menu File / Share / Publish to web), in ',
+                  ),
+                  TextSpan(
+                    text: 'tsv',
+                    style: TextStyle(fontWeight: FontWeight.bold),
+                  ),
+                  TextSpan(text: ' format.'),
+                ],
               ),
-              TextSpan(
-                text: 'tsv',
-                style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
               ),
-              TextSpan(text: ' format.'),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('OK'),
-          ),
-        ],
-      ),
     );
   }
 
   void _showErrorDialog(String message) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Error'),
-        content: Text(message),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
-        ],
-      ),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Error'),
+            content: Text(message),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('OK'),
+              ),
+            ],
+          ),
     );
   }
 
@@ -297,8 +302,10 @@ When loading, you can "Replace" or "Merge" the new content.
       final Map<String, dynamic> rowData = {
         DatabaseHelper.columnCategory: row.isNotEmpty ? row[0].toString() : '',
         DatabaseHelper.columnWord: row.length > 1 ? row[1].toString() : '',
-        DatabaseHelper.columnTranscription: row.length > 2 ? row[2].toString() : '',
-        DatabaseHelper.columnTranslation: row.length > 3 ? row[3].toString() : '',
+        DatabaseHelper.columnTranscription:
+            row.length > 2 ? row[2].toString() : '',
+        DatabaseHelper.columnTranslation:
+            row.length > 3 ? row[3].toString() : '',
         DatabaseHelper.columnIsActive: 1,
       };
 
@@ -318,34 +325,41 @@ When loading, you can "Replace" or "Merge" the new content.
   void _showImportDialog(List<List<String>> csvList) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Confirm Import'),
-        content: Text(
-          'Do you want to REPLACE the current list or MERGE to it? \n\nNumber of words: ${csvList.length}',
-        ),
-        actions: <Widget>[
-          TextButton(
-            onPressed: () async {
-              await _insertCsvDataIntoDatabase(csvList, clearExisting: true);
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx);
-              if (!mounted) return;
-              Navigator.pop(context, true);
-            },
-            child: const Text('Replace'),
+      builder:
+          (ctx) => AlertDialog(
+            title: const Text('Confirm Import'),
+            content: Text(
+              'Do you want to REPLACE the current list or MERGE to it? \n\nNumber of words: ${csvList.length}',
+            ),
+            actions: <Widget>[
+              TextButton(
+                onPressed: () async {
+                  await _insertCsvDataIntoDatabase(
+                    csvList,
+                    clearExisting: true,
+                  );
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Replace'),
+              ),
+              TextButton(
+                onPressed: () async {
+                  await _insertCsvDataIntoDatabase(
+                    csvList,
+                    clearExisting: false,
+                  );
+                  if (!ctx.mounted) return;
+                  Navigator.pop(ctx);
+                  if (!mounted) return;
+                  Navigator.pop(context, true);
+                },
+                child: const Text('Merge'),
+              ),
+            ],
           ),
-          TextButton(
-            onPressed: () async {
-              await _insertCsvDataIntoDatabase(csvList, clearExisting: false);
-              if (!ctx.mounted) return;
-              Navigator.pop(ctx);
-              if (!mounted) return;
-              Navigator.pop(context, true);
-            },
-            child: const Text('Merge'),
-          ),
-        ],
-      ),
     );
   }
 }

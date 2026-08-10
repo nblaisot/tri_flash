@@ -65,6 +65,38 @@ class BilingualSentence {
   final String translation;
 }
 
+class WordAnnotation {
+  const WordAnnotation({
+    required this.start,
+    required this.end,
+    required this.surface,
+    required this.pronunciation,
+    required this.contextualTranslation,
+  });
+
+  factory WordAnnotation.fromJson(Map<String, dynamic> json) => WordAnnotation(
+    start: json['start'] as int,
+    end: json['end'] as int,
+    surface: json['surface'] as String,
+    pronunciation: json['pronunciation'] as String,
+    contextualTranslation: json['contextualTranslation'] as String,
+  );
+
+  final int start;
+  final int end;
+  final String surface;
+  final String pronunciation;
+  final String contextualTranslation;
+
+  Map<String, dynamic> toJson() => {
+    'start': start,
+    'end': end,
+    'surface': surface,
+    'pronunciation': pronunciation,
+    'contextualTranslation': contextualTranslation,
+  };
+}
+
 class GeneratedText {
   const GeneratedText({
     required this.id,
@@ -75,7 +107,8 @@ class GeneratedText {
     required this.targetWordCount,
     required this.outsideVocabularyPercent,
     required this.provider,
-    required this.vocabulary,
+    required this.sourceAnnotations,
+    required this.translationAnnotations,
   });
 
   factory GeneratedText.fromJson(Map<String, dynamic> json) => GeneratedText(
@@ -89,10 +122,16 @@ class GeneratedText {
     provider:
         AiProviderTypeValue.fromValue(json['provider'] as String?) ??
         AiProviderType.openAi,
-    vocabulary:
-        (json['vocabulary'] as List<dynamic>)
+    sourceAnnotations:
+        (json['sourceAnnotations'] as List<dynamic>)
             .map(
-              (item) => VocabularyEntry.fromJson(item as Map<String, dynamic>),
+              (item) => WordAnnotation.fromJson(item as Map<String, dynamic>),
+            )
+            .toList(),
+    translationAnnotations:
+        (json['translationAnnotations'] as List<dynamic>)
+            .map(
+              (item) => WordAnnotation.fromJson(item as Map<String, dynamic>),
             )
             .toList(),
   );
@@ -105,7 +144,8 @@ class GeneratedText {
   final int targetWordCount;
   final int outsideVocabularyPercent;
   final AiProviderType provider;
-  final List<VocabularyEntry> vocabulary;
+  final List<WordAnnotation> sourceAnnotations;
+  final List<WordAnnotation> translationAnnotations;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -116,7 +156,10 @@ class GeneratedText {
     'targetWordCount': targetWordCount,
     'outsideVocabularyPercent': outsideVocabularyPercent,
     'provider': provider.value,
-    'vocabulary': vocabulary.map((item) => item.toJson()).toList(),
+    'sourceAnnotations':
+        sourceAnnotations.map((item) => item.toJson()).toList(),
+    'translationAnnotations':
+        translationAnnotations.map((item) => item.toJson()).toList(),
   };
 
   String encode() => jsonEncode(toJson());

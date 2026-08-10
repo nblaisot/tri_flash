@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:tri_flash/app/app_theme.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/screens/main/main_screen.dart';
 import 'package:tri_flash/state/app_preferences.dart';
@@ -28,10 +29,7 @@ class TriFlashApp extends StatelessWidget {
               GlobalWidgetsLocalizations.delegate,
               GlobalCupertinoLocalizations.delegate,
             ],
-            theme: ThemeData(
-              primarySwatch: Colors.blue,
-              visualDensity: VisualDensity.adaptivePlatformDensity,
-            ),
+            theme: AppTheme.light,
             home: const MainScreen(),
           ),
     );

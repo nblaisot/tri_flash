@@ -45,12 +45,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Could not initialize TTS: $e'),
-            backgroundColor: Colors.orange,
-          ),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Could not initialize TTS: $e')));
       }
     } finally {
       if (mounted) {
@@ -209,7 +206,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               children: [
                 Icon(
                   _providerConfigured ? Icons.check_circle : Icons.info_outline,
-                  color: _providerConfigured ? Colors.green : Colors.orange,
+                  color:
+                      _providerConfigured
+                          ? Theme.of(context).colorScheme.primary
+                          : Theme.of(context).colorScheme.error,
                 ),
                 const SizedBox(width: 8),
                 Expanded(
@@ -332,7 +332,6 @@ class _SettingsScreenState extends State<SettingsScreen> {
               max: 1.0,
               divisions: 9,
               label: currentSpeed.toStringAsFixed(1),
-              activeColor: const Color(0xFFFFC107),
               onChanged: (double value) async {
                 await _ttsService.updateSettings(speed: value);
                 if (mounted) setState(() {});
@@ -373,16 +372,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
               ],
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Select "Auto" to detect language automatically based on text characters, '
               'or choose a specific language.',
-              style: TextStyle(fontSize: 12, color: Colors.grey),
+              style: TextStyle(
+                fontSize: 12,
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
             ),
             const SizedBox(height: 12),
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey.shade300),
+                border: Border.all(
+                  color: Theme.of(context).colorScheme.outlineVariant,
+                ),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: DropdownButton<String>(
@@ -459,19 +463,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 } catch (e) {
                   if (!mounted) return;
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(
-                      content: Text('TTS test failed: $e'),
-                      backgroundColor: Colors.red,
-                    ),
+                    SnackBar(content: Text('TTS test failed: $e')),
                   );
                 }
               },
               icon: const Icon(Icons.play_arrow),
               label: const Text('Play Test'),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: const Color(0xFFFFC107),
-                foregroundColor: Colors.black,
-              ),
             ),
           ],
         ),
@@ -497,38 +494,39 @@ class _SettingsScreenState extends State<SettingsScreen> {
         },
         icon: const Icon(Icons.restart_alt),
         label: const Text('Reset Onboarding Tips'),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.grey.shade300,
-          foregroundColor: Colors.black,
-        ),
       ),
     );
   }
 
   Widget _buildTipsCard() {
+    final colors = Theme.of(context).colorScheme;
     return Card(
-      color: Colors.blue.shade50,
-      child: const Padding(
-        padding: EdgeInsets.all(16.0),
+      color: colors.primaryContainer,
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Row(
               children: [
-                Icon(Icons.info_outline, size: 20, color: Colors.blue),
-                SizedBox(width: 8),
+                Icon(
+                  Icons.info_outline,
+                  size: 20,
+                  color: colors.onPrimaryContainer,
+                ),
+                const SizedBox(width: 8),
                 Text(
                   'Tips',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
-                    color: Colors.blue,
+                    color: colors.onPrimaryContainer,
                   ),
                 ),
               ],
             ),
-            SizedBox(height: 8),
-            Text(
+            const SizedBox(height: 8),
+            const Text(
               '• Auto-detect works best for non-Latin scripts (Japanese, Chinese, Arabic, etc.)\n'
               '• For Latin-based text, consider selecting a specific language\n'
               '• If TTS fails, try installing additional language packs in your device settings',

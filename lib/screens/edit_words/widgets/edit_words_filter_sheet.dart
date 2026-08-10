@@ -4,10 +4,7 @@ import 'package:tri_flash/screens/edit_words/controllers/edit_words_controller.d
 
 /// Bottom sheet that allows configuring the filters applied to the word list.
 class EditWordsFilterSheet extends StatefulWidget {
-  const EditWordsFilterSheet({
-    super.key,
-    required this.controller,
-  });
+  const EditWordsFilterSheet({super.key, required this.controller});
 
   final EditWordsController controller;
 
@@ -58,20 +55,20 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
 
   Widget _buildHiddenFilterSection() {
     return Column(
-      children: HiddenFilter.values
-          .map(
-            (option) => RadioListTile<HiddenFilter>(
-              activeColor: const Color(0xFFFFC107),
-              title: Text(option.label),
-              value: option,
-              groupValue: _hiddenFilter,
-              onChanged: (value) {
-                if (value == null) return;
-                setState(() => _hiddenFilter = value);
-              },
-            ),
-          )
-          .toList(),
+      children:
+          HiddenFilter.values
+              .map(
+                (option) => RadioListTile<HiddenFilter>(
+                  title: Text(option.label),
+                  value: option,
+                  groupValue: _hiddenFilter,
+                  onChanged: (value) {
+                    if (value == null) return;
+                    setState(() => _hiddenFilter = value);
+                  },
+                ),
+              )
+              .toList(),
     );
   }
 
@@ -79,10 +76,7 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        const Text(
-          'Categories',
-          style: TextStyle(fontWeight: FontWeight.bold),
-        ),
+        const Text('Categories', style: TextStyle(fontWeight: FontWeight.bold)),
         Row(
           children: [
             TextButton(
@@ -90,10 +84,12 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
               child: const Text('Unselect All'),
             ),
             TextButton(
-              onPressed: () => setState(
-                () => _selectedCategories =
-                    widget.controller.allCategories.toSet(),
-              ),
+              onPressed:
+                  () => setState(
+                    () =>
+                        _selectedCategories =
+                            widget.controller.allCategories.toSet(),
+                  ),
               child: const Text('Select All'),
             ),
           ],
@@ -105,22 +101,23 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
   Widget _buildCategoriesList() {
     final categories = widget.controller.allCategories;
     return ListView(
-      children: categories
-          .map(
-            (category) => CheckboxListTile(
-              activeColor: const Color(0xFFFFC107),
-              title: Text(category),
-              value: _selectedCategories.contains(category),
-              onChanged: (checked) => setState(() {
-                if (checked == true) {
-                  _selectedCategories.add(category);
-                } else {
-                  _selectedCategories.remove(category);
-                }
-              }),
-            ),
-          )
-          .toList(),
+      children:
+          categories
+              .map(
+                (category) => CheckboxListTile(
+                  title: Text(category),
+                  value: _selectedCategories.contains(category),
+                  onChanged:
+                      (checked) => setState(() {
+                        if (checked == true) {
+                          _selectedCategories.add(category);
+                        } else {
+                          _selectedCategories.remove(category);
+                        }
+                      }),
+                ),
+              )
+              .toList(),
     );
   }
 

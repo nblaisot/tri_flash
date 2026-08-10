@@ -4,11 +4,7 @@ import 'package:tri_flash/screens/edit_words/controllers/edit_words_controller.d
 
 /// Dialog that allows creating or editing a single word entry.
 class EditWordDialog extends StatefulWidget {
-  const EditWordDialog({
-    super.key,
-    required this.controller,
-    this.initialWord,
-  });
+  const EditWordDialog({super.key, required this.controller, this.initialWord});
 
   final EditWordsController controller;
   final Map<String, dynamic>? initialWord;
@@ -29,10 +25,12 @@ class _EditWordDialogState extends State<EditWordDialog> {
   @override
   void initState() {
     super.initState();
-    _categoryController =
-        TextEditingController(text: widget.initialWord?['category'] ?? '');
-    _wordController =
-        TextEditingController(text: widget.initialWord?['word'] ?? '');
+    _categoryController = TextEditingController(
+      text: widget.initialWord?['category'] ?? '',
+    );
+    _wordController = TextEditingController(
+      text: widget.initialWord?['word'] ?? '',
+    );
     _transcriptionController = TextEditingController(
       text: widget.initialWord?['transcription'] ?? '',
     );
@@ -81,7 +79,6 @@ class _EditWordDialogState extends State<EditWordDialog> {
                 children: [
                   const Text('Hidden'),
                   Switch(
-                    activeColor: const Color(0xFFFFC107),
                     value: _isHidden,
                     onChanged: (value) => setState(() => _isHidden = value),
                   ),
@@ -98,9 +95,9 @@ class _EditWordDialogState extends State<EditWordDialog> {
               await widget.controller.deleteWord(id);
               if (context.mounted) Navigator.pop(context);
             },
-            child: const Text(
+            child: Text(
               'Delete',
-              style: TextStyle(color: Colors.red),
+              style: TextStyle(color: Theme.of(context).colorScheme.error),
             ),
           ),
         TextButton(

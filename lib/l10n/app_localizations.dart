@@ -43,9 +43,16 @@ class AppLocalizations {
       'selectCategories': 'Select categories',
       'done': 'Done',
       'targetWordCount': 'Target word count',
+      'wordCountRange': '20–500',
       'unknownWords': 'Outside vocabulary',
       'generate': 'Generate',
       'generating': 'Generating…',
+      'analyzingCorpus': 'Analyzing corpus ({current}/{total})…',
+      'generatingBilingualText': 'Generating bilingual text…',
+      'annotatingSource': 'Annotating original ({current}/{total})…',
+      'annotatingTranslation': 'Annotating translation ({current}/{total})…',
+      'savingGeneratedText': 'Saving…',
+      'generationCancelled': 'Generation cancelled',
       'noCategories': 'Select at least one category.',
       'noWords': 'No active words were found in those categories.',
       'aiProvider': 'AI provider',
@@ -94,10 +101,11 @@ class AppLocalizations {
       'transcription': 'Transcription',
       'translation': 'Translation',
       'wordsCount': 'Words: {active} / {total}',
-      'firstMatchHint':
-          'Tap a highlighted vocabulary item to see its saved pronunciation and translation.',
+      'annotationHint':
+          'Tap any word to see its pronunciation and contextual translation.',
       'sourceWord': 'Source word',
       'pronunciation': 'Pronunciation',
+      'contextualTranslation': 'Contextual translation',
     },
     'fr': {
       'settings': 'Réglages',
@@ -118,9 +126,17 @@ class AppLocalizations {
       'selectCategories': 'Sélectionner les catégories',
       'done': 'Terminé',
       'targetWordCount': 'Nombre de mots cible',
+      'wordCountRange': '20–500',
       'unknownWords': 'Vocabulaire extérieur',
       'generate': 'Générer',
       'generating': 'Génération…',
+      'analyzingCorpus': 'Analyse du corpus ({current}/{total})…',
+      'generatingBilingualText': 'Génération du texte bilingue…',
+      'annotatingSource': 'Annotation de l’original ({current}/{total})…',
+      'annotatingTranslation':
+          'Annotation de la traduction ({current}/{total})…',
+      'savingGeneratedText': 'Enregistrement…',
+      'generationCancelled': 'Génération annulée',
       'noCategories': 'Sélectionnez au moins une catégorie.',
       'noWords': 'Aucun mot actif dans ces catégories.',
       'aiProvider': 'Fournisseur d’IA',
@@ -169,10 +185,11 @@ class AppLocalizations {
       'transcription': 'Prononciation',
       'translation': 'Traduction',
       'wordsCount': 'Mots : {active} / {total}',
-      'firstMatchHint':
-          'Touchez un élément surligné pour voir sa prononciation et sa traduction enregistrées.',
+      'annotationHint':
+          'Touchez un mot pour voir sa prononciation et sa traduction contextuelle.',
       'sourceWord': 'Mot source',
       'pronunciation': 'Prononciation',
+      'contextualTranslation': 'Traduction contextuelle',
     },
   };
 }

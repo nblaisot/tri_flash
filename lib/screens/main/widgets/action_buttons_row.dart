@@ -42,26 +42,17 @@ class MainActionButtons extends StatelessWidget {
         Container(
           key: hideButtonKey,
           margin: const EdgeInsets.symmetric(horizontal: 8),
-          child: ElevatedButton(
-            onPressed: onHide,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.grey),
-            child: const Text('Hide'),
-          ),
+          child: ElevatedButton(onPressed: onHide, child: const Text('Hide')),
         ),
         Container(
           key: duplicateButtonKey,
           margin: const EdgeInsets.symmetric(horizontal: 8),
           child: ElevatedButton(
             onPressed: onDuplicate,
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
             child: const Text('!!'),
           ),
         ),
-        ElevatedButton(
-          onPressed: onNext,
-          style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFFFC107)),
-          child: const Text('Next'),
-        ),
+        ElevatedButton(onPressed: onNext, child: const Text('Next')),
       ],
     );
   }

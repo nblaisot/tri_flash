@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:http/http.dart' as http;
@@ -6,14 +7,55 @@ import 'package:tri_flash/services/ai/ai_settings_service.dart';
 import 'package:tri_flash/services/ai/codex_auth_service.dart';
 
 class AiProviderException implements Exception {
-  const AiProviderException(this.message);
+  const AiProviderException(this.message, {this.isTransient = false});
   final String message;
+  final bool isTransient;
   @override
   String toString() => message;
 }
 
+class AiGenerationCancelled implements Exception {
+  const AiGenerationCancelled();
+
+  @override
+  String toString() => 'Generation cancelled.';
+}
+
+class AiCancellationToken {
+  bool _isCancelled = false;
+  final List<void Function()> _listeners = [];
+
+  bool get isCancelled => _isCancelled;
+
+  void throwIfCancelled() {
+    if (_isCancelled) throw const AiGenerationCancelled();
+  }
+
+  void Function() listen(void Function() listener) {
+    if (_isCancelled) {
+      listener();
+      return () {};
+    }
+    _listeners.add(listener);
+    return () => _listeners.remove(listener);
+  }
+
+  void cancel() {
+    if (_isCancelled) return;
+    _isCancelled = true;
+    for (final listener in List<void Function()>.from(_listeners)) {
+      listener();
+    }
+    _listeners.clear();
+  }
+}
+
 abstract class AiProviderClient {
-  Future<String> generate(String prompt);
+  Future<String> generate(
+    String prompt, {
+    required int maxOutputTokens,
+    AiCancellationToken? cancellationToken,
+  });
 }
 
 class OpenAiProviderClient implements AiProviderClient {
@@ -24,28 +66,50 @@ class OpenAiProviderClient implements AiProviderClient {
   final http.Client _client;
 
   @override
-  Future<String> generate(String prompt) async {
-    final response = await _client.post(
-      Uri.parse('https://api.openai.com/v1/responses'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode({
-        'model': 'gpt-5.6-terra',
-        'instructions':
-            'Return only the JSON object requested by the user. Do not use Markdown.',
-        'input': prompt,
-        'max_output_tokens': 4000,
-        'store': false,
-      }),
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AiProviderException(_errorMessage('OpenAI', response));
+  Future<String> generate(
+    String prompt, {
+    required int maxOutputTokens,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final removeListener = cancellationToken?.listen(_client.close);
+    try {
+      final response = await _client
+          .post(
+            Uri.parse('https://api.openai.com/v1/responses'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode({
+              'model': 'gpt-5.6-terra',
+              'instructions':
+                  'Return only the JSON object requested by the user. Do not use Markdown.',
+              'input': prompt,
+              'max_output_tokens': maxOutputTokens,
+              'store': false,
+            }),
+          )
+          .timeout(const Duration(seconds: 120));
+      cancellationToken?.throwIfCancelled();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw AiProviderException(
+          _errorMessage('OpenAI', response),
+          isTransient: response.statusCode >= 500 || response.statusCode == 429,
+        );
+      }
+      return _extractResponsesText(
+        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
+      );
+    } on TimeoutException {
+      _client.close();
+      throw const AiProviderException(
+        'OpenAI request timed out after 120 seconds.',
+        isTransient: true,
+      );
+    } finally {
+      removeListener?.call();
     }
-    return _extractResponsesText(
-      jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
-    );
   }
 }
 
@@ -57,45 +121,67 @@ class MistralProviderClient implements AiProviderClient {
   final http.Client _client;
 
   @override
-  Future<String> generate(String prompt) async {
-    final response = await _client.post(
-      Uri.parse('https://api.mistral.ai/v1/chat/completions'),
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': 'Bearer $apiKey',
-      },
-      body: jsonEncode({
-        'model': 'mistral-medium-3-5',
-        'messages': [
-          {
-            'role': 'system',
-            'content':
-                'Return only the JSON object requested by the user. Do not use Markdown.',
-          },
-          {'role': 'user', 'content': prompt},
-        ],
-        'response_format': {'type': 'json_object'},
-        'max_tokens': 4000,
-        'temperature': 0.7,
-      }),
-    );
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AiProviderException(_errorMessage('Mistral', response));
-    }
-    final data =
-        jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
-    final choices = data['choices'] as List<dynamic>?;
-    String? content;
-    if (choices != null && choices.isNotEmpty && choices.first is Map) {
-      final message = (choices.first as Map)['message'];
-      if (message is Map && message['content'] is String) {
-        content = message['content'] as String;
+  Future<String> generate(
+    String prompt, {
+    required int maxOutputTokens,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final removeListener = cancellationToken?.listen(_client.close);
+    try {
+      final response = await _client
+          .post(
+            Uri.parse('https://api.mistral.ai/v1/chat/completions'),
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $apiKey',
+            },
+            body: jsonEncode({
+              'model': 'mistral-medium-3-5',
+              'messages': [
+                {
+                  'role': 'system',
+                  'content':
+                      'Return only the JSON object requested by the user. Do not use Markdown.',
+                },
+                {'role': 'user', 'content': prompt},
+              ],
+              'response_format': {'type': 'json_object'},
+              'max_tokens': maxOutputTokens,
+              'temperature': 0.7,
+            }),
+          )
+          .timeout(const Duration(seconds: 120));
+      cancellationToken?.throwIfCancelled();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw AiProviderException(
+          _errorMessage('Mistral', response),
+          isTransient: response.statusCode >= 500 || response.statusCode == 429,
+        );
       }
+      final data =
+          jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;
+      final choices = data['choices'] as List<dynamic>?;
+      String? content;
+      if (choices != null && choices.isNotEmpty && choices.first is Map) {
+        final message = (choices.first as Map)['message'];
+        if (message is Map && message['content'] is String) {
+          content = message['content'] as String;
+        }
+      }
+      if (content == null || content.trim().isEmpty) {
+        throw const AiProviderException('Mistral returned an empty response.');
+      }
+      return content;
+    } on TimeoutException {
+      _client.close();
+      throw const AiProviderException(
+        'Mistral request timed out after 120 seconds.',
+        isTransient: true,
+      );
+    } finally {
+      removeListener?.call();
     }
-    if (content == null || content.trim().isEmpty) {
-      throw const AiProviderException('Mistral returned an empty response.');
-    }
-    return content;
   }
 }
 
@@ -107,23 +193,49 @@ class CodexProviderClient implements AiProviderClient {
   final http.Client _client;
 
   @override
-  Future<String> generate(String prompt) async {
-    var credentials = await auth.validCredentials();
-    var response = await _send(prompt, credentials);
-    if (response.statusCode == 401) {
-      credentials = await auth.refresh(credentials);
-      response = await _send(prompt, credentials);
+  Future<String> generate(
+    String prompt, {
+    required int maxOutputTokens,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    cancellationToken?.throwIfCancelled();
+    final removeListener = cancellationToken?.listen(_client.close);
+    try {
+      var credentials = await auth.validCredentials();
+      var response = await _send(
+        prompt,
+        credentials,
+      ).timeout(const Duration(seconds: 120));
+      if (response.statusCode == 401) {
+        credentials = await auth.refresh(credentials);
+        response = await _send(
+          prompt,
+          credentials,
+        ).timeout(const Duration(seconds: 120));
+      }
+      cancellationToken?.throwIfCancelled();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        throw AiProviderException(
+          _errorMessage('ChatGPT/Codex', response),
+          isTransient: response.statusCode >= 500 || response.statusCode == 429,
+        );
+      }
+      final body = utf8.decode(response.bodyBytes);
+      final contentType = response.headers['content-type'] ?? '';
+      if (contentType.contains('text/event-stream') ||
+          body.trimLeft().startsWith('event:')) {
+        return _extractSseText(body);
+      }
+      return _extractResponsesText(jsonDecode(body) as Map<String, dynamic>);
+    } on TimeoutException {
+      _client.close();
+      throw const AiProviderException(
+        'ChatGPT/Codex request timed out after 120 seconds.',
+        isTransient: true,
+      );
+    } finally {
+      removeListener?.call();
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw AiProviderException(_errorMessage('ChatGPT/Codex', response));
-    }
-    final body = utf8.decode(response.bodyBytes);
-    final contentType = response.headers['content-type'] ?? '';
-    if (contentType.contains('text/event-stream') ||
-        body.trimLeft().startsWith('event:')) {
-      return _extractSseText(body);
-    }
-    return _extractResponsesText(jsonDecode(body) as Map<String, dynamic>);
   }
 
   Future<http.Response> _send(String prompt, CodexCredentials credentials) {

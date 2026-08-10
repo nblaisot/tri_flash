@@ -57,7 +57,7 @@ class OnboardingOverlay extends StatelessWidget {
       children: [
         Positioned.fill(
           child: Container(
-            color: Colors.black.withValues(alpha: 0.5),
+            color: Theme.of(context).colorScheme.scrim.withValues(alpha: 0.5),
           ),
         ),
         Positioned(
@@ -67,7 +67,10 @@ class OnboardingOverlay extends StatelessWidget {
           height: size.height + 8,
           child: Container(
             decoration: BoxDecoration(
-              border: Border.all(color: Colors.red, width: 3),
+              border: Border.all(
+                color: Theme.of(context).colorScheme.primary,
+                width: 3,
+              ),
             ),
           ),
         ),
@@ -75,7 +78,7 @@ class OnboardingOverlay extends StatelessWidget {
           left: 16,
           right: 16,
           top: tipTop,
-          child: _buildTipCard(tipData),
+          child: _buildTipCard(context, tipData),
         ),
       ],
     );
@@ -94,23 +97,17 @@ class OnboardingOverlay extends StatelessWidget {
     }
   }
 
-  Widget _buildTipCard(String tipText) {
+  Widget _buildTipCard(BuildContext context, String tipText) {
     return Card(
-      color: Colors.white,
+      color: Theme.of(context).colorScheme.surface,
       child: Padding(
         padding: const EdgeInsets.all(16.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              tipText,
-              style: const TextStyle(fontSize: 16),
-            ),
+            Text(tipText, style: const TextStyle(fontSize: 16)),
             const SizedBox(height: 8),
-            TextButton(
-              style: TextButton.styleFrom(
-                backgroundColor: const Color(0xFFFFC107),
-              ),
+            FilledButton(
               onPressed: step < 9 ? onNext : onComplete,
               child: const Text('Next'),
             ),
