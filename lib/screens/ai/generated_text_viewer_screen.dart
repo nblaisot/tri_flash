@@ -109,6 +109,12 @@ class _GeneratedTextViewerScreenState extends State<GeneratedTextViewerScreen> {
 
   Widget _buildAnnotatedText(BuildContext context) {
     final value = _visibleText;
+    final textStyle = TextStyle(
+      fontSize: 18,
+      height: 1.5,
+      color: Theme.of(context).colorScheme.onSurface,
+      decoration: TextDecoration.none,
+    );
     final spans = <InlineSpan>[];
     var cursor = 0;
     for (final annotation in _annotations) {
@@ -119,7 +125,12 @@ class _GeneratedTextViewerScreenState extends State<GeneratedTextViewerScreen> {
         continue;
       }
       if (annotation.start > cursor) {
-        spans.add(TextSpan(text: value.substring(cursor, annotation.start)));
+        spans.add(
+          TextSpan(
+            text: value.substring(cursor, annotation.start),
+            style: textStyle,
+          ),
+        );
       }
       final selected = identical(_selected, annotation);
       spans.add(
@@ -139,10 +150,7 @@ class _GeneratedTextViewerScreenState extends State<GeneratedTextViewerScreen> {
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 1),
-                child: Text(
-                  annotation.surface,
-                  style: const TextStyle(fontSize: 18, height: 1.5),
-                ),
+                child: Text(annotation.surface, style: textStyle),
               ),
             ),
           ),
@@ -151,16 +159,9 @@ class _GeneratedTextViewerScreenState extends State<GeneratedTextViewerScreen> {
       cursor = annotation.end;
     }
     if (cursor < value.length) {
-      spans.add(TextSpan(text: value.substring(cursor)));
+      spans.add(TextSpan(text: value.substring(cursor), style: textStyle));
     }
-    return Text.rich(
-      TextSpan(
-        style: DefaultTextStyle.of(
-          context,
-        ).style.copyWith(fontSize: 18, height: 1.5),
-        children: spans,
-      ),
-    );
+    return Text.rich(TextSpan(style: textStyle, children: spans));
   }
 
   Widget _buildAnnotation(BuildContext context, WordAnnotation annotation) {

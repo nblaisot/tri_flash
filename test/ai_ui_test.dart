@@ -82,6 +82,22 @@ void main() {
     );
     await tester.pumpWidget(_app(GeneratedTextViewerScreen(text: generated)));
 
+    final annotatedText = tester.widget<Text>(
+      find.byWidgetPredicate(
+        (widget) =>
+            widget is Text &&
+            widget.textSpan is TextSpan &&
+            (widget.textSpan as TextSpan).children?.any(
+                  (span) => span is WidgetSpan,
+                ) ==
+                true &&
+            widget.textSpan!.toPlainText(includePlaceholders: false) == ' !',
+      ),
+    );
+    final rootSpan = annotatedText.textSpan as TextSpan;
+    final punctuationSpan = rootSpan.children!.last as TextSpan;
+    expect(punctuationSpan.style!.color, AppTheme.light.colorScheme.onSurface);
+
     await tester.tap(find.text('Bonjour'));
     await tester.pump();
     expect(find.textContaining('Pronunciation: bɔ̃.ʒuʁ'), findsOneWidget);
