@@ -49,6 +49,8 @@ dependencies:
   permission_handler: ^11.3.1
   flutter_secure_storage: ^9.2.4
   webview_flutter: ^4.13.0
+  on_device_ai:
+    path: packages/on_device_ai
 
 
 dev_dependencies:

@@ -86,6 +86,44 @@ class AiGenerationService {
   static const textOutputTokens = 8000;
   static const annotationOutputTokens = 4000;
 
+  static const onDeviceAnalysisOutputTokens = 2048;
+  static const onDeviceTextOutputTokens = 4096;
+  static const onDeviceAnnotationOutputTokens = 2048;
+
+  static const onDeviceMaxCorpusEntries = 50;
+  static const onDeviceMaxCorpusCharacters = 3000;
+
+  int _analysisOutputTokens(AiProviderType provider) =>
+      provider == AiProviderType.onDevice
+          ? onDeviceAnalysisOutputTokens
+          : analysisOutputTokens;
+
+  int _textOutputTokens(AiProviderType provider) =>
+      provider == AiProviderType.onDevice
+          ? onDeviceTextOutputTokens
+          : textOutputTokens;
+
+  int _annotationOutputTokens(AiProviderType provider) =>
+      provider == AiProviderType.onDevice
+          ? onDeviceAnnotationOutputTokens
+          : annotationOutputTokens;
+
+  List<List<VocabularyEntry>> _corpusBatches(
+    List<VocabularyEntry> entries,
+    AiProviderType provider,
+  ) =>
+      batchCorpus(
+        entries,
+        maxEntries:
+            provider == AiProviderType.onDevice
+                ? onDeviceMaxCorpusEntries
+                : 200,
+        maxCharacters:
+            provider == AiProviderType.onDevice
+                ? onDeviceMaxCorpusCharacters
+                : 12000,
+      );
+
   final AiSettingsService settings;
   final AiProviderClientFactory? _clientFactory;
 
@@ -95,7 +133,7 @@ class AiGenerationService {
     final translationLanguage = await settings.getTranslationLanguage();
     final data = await _generateJson(
       provider: provider,
-      maxOutputTokens: analysisOutputTokens,
+      maxOutputTokens: _analysisOutputTokens(provider),
       prompt: '''
 Create one natural example sentence and its faithful translation.
 
@@ -140,7 +178,7 @@ Requirements:
     final provider = await _requireProvider();
     final sourceLanguage = await settings.getSourceLanguage();
     final translationLanguage = await settings.getTranslationLanguage();
-    final corpusBatches = batchCorpus(availableVocabulary);
+    final corpusBatches = _corpusBatches(availableVocabulary, provider);
     final analyses = <Map<String, dynamic>>[];
 
     for (var index = 0; index < corpusBatches.length; index++) {
@@ -165,7 +203,7 @@ Requirements:
       final expectedIds = input.map((item) => item['id']!).toSet();
       final data = await _generateJson(
         provider: provider,
-        maxOutputTokens: analysisOutputTokens,
+        maxOutputTokens: _analysisOutputTokens(provider),
         cancellationToken: token,
         prompt: '''
 Analyze every vocabulary entry below for use in a new language-learning text.
@@ -208,7 +246,7 @@ ${jsonEncode(input)}
     }
     final bilingual = await _generateJson(
       provider: provider,
-      maxOutputTokens: textOutputTokens,
+      maxOutputTokens: _textOutputTokens(provider),
       cancellationToken: token,
       prompt: '''
 Write a varied, coherent passage and a faithful translation using the complete analyzed corpus below.
@@ -346,7 +384,7 @@ ${jsonEncode(text)}
           attempt == 0
               ? prompt
               : '$prompt\nThe previous annotation was invalid. ${lastValidation?.repairHint ?? _AnnotationValidationException(_AnnotationFailure.malformedResponse, 0).repairHint} Return only complete valid JSON.',
-          maxOutputTokens: annotationOutputTokens,
+          maxOutputTokens: _annotationOutputTokens(provider),
           cancellationToken: cancellationToken,
         );
         final data = _decodeJsonObject(raw);

@@ -1,4 +1,5 @@
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:on_device_ai/on_device_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_flash/models/ai_models.dart';
 
@@ -79,7 +80,12 @@ class AiSettingsService {
       await CodexCredentialStore(_secureStorage).isConfigured(),
     AiProviderType.openAi => (await getOpenAiApiKey())?.isNotEmpty == true,
     AiProviderType.mistral => (await getMistralApiKey())?.isNotEmpty == true,
+    AiProviderType.onDevice =>
+      (await OnDeviceAiBridge().getAvailability()).isReady,
   };
+
+  Future<OnDeviceAiAvailability> getOnDeviceAvailability() =>
+      OnDeviceAiBridge().getAvailability();
 }
 
 class CodexCredentialStore {

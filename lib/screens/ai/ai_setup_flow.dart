@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:on_device_ai/on_device_ai.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/screens/ai/codex_sign_in_screen.dart';
+import 'package:tri_flash/services/ai/ai_feature_flags.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
 import 'package:tri_flash/services/ai/codex_auth_service.dart';
 
@@ -38,6 +40,10 @@ class AiSetupFlow {
     }
 
     var provider = await service.getProvider();
+    if (provider == AiProviderType.onDevice &&
+        !AiFeatureFlags.enableOnDeviceAi) {
+      provider = null;
+    }
     if (provider == null) {
       if (!context.mounted) return false;
       provider = await chooseProvider(context);
@@ -76,6 +82,14 @@ class AiSetupFlow {
                   title: Text(l10n.text('mistralProvider')),
                   onTap: () => Navigator.pop(context, AiProviderType.mistral),
                 ),
+                if (AiFeatureFlags.enableOnDeviceAi)
+                  ListTile(
+                    leading: const Icon(Icons.phone_android),
+                    title: Text(l10n.text('onDeviceProvider')),
+                    subtitle: Text(l10n.text('onDeviceProviderHelp')),
+                    onTap:
+                        () => Navigator.pop(context, AiProviderType.onDevice),
+                  ),
               ],
             ),
           ),
@@ -153,7 +167,73 @@ class AiSetupFlow {
           await service.setMistralApiKey(value);
         }
         return true;
+      case AiProviderType.onDevice:
+        return _configureOnDevice(context, service);
     }
+  }
+
+  static Future<bool> _configureOnDevice(
+    BuildContext context,
+    AiSettingsService service,
+  ) async {
+    final bridge = OnDeviceAiBridge();
+    var availability = await bridge.getAvailability();
+    if (availability.isReady) return true;
+    if (!context.mounted) return false;
+
+    if (availability.status == OnDeviceAiStatus.unsupported) {
+      _showError(context, _onDeviceStatusMessage(context, availability));
+      return false;
+    }
+
+    if (availability.status == OnDeviceAiStatus.downloadRequired) {
+      final accepted = await showDialog<bool>(
+        context: context,
+        builder:
+            (context) => AlertDialog(
+              title: Text(context.l10n.text('onDeviceDownloadTitle')),
+              content: Text(context.l10n.text('onDeviceDownloadBody')),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(context, false),
+                  child: Text(context.l10n.text('cancel')),
+                ),
+                FilledButton(
+                  onPressed: () => Navigator.pop(context, true),
+                  child: Text(context.l10n.text('onDeviceDownloadAction')),
+                ),
+              ],
+            ),
+      );
+      if (accepted != true) return false;
+      if (!context.mounted) return false;
+      try {
+        await bridge.downloadModel();
+      } catch (error) {
+        if (context.mounted) _showError(context, error.toString());
+        return false;
+      }
+      availability = await bridge.getAvailability();
+    }
+
+    if (availability.isReady) return true;
+    if (context.mounted) {
+      _showError(context, _onDeviceStatusMessage(context, availability));
+    }
+    return false;
+  }
+
+  static String _onDeviceStatusMessage(
+    BuildContext context,
+    OnDeviceAiAvailability availability,
+  ) {
+    if (availability.message?.isNotEmpty == true) return availability.message!;
+    return switch (availability.status) {
+      OnDeviceAiStatus.downloading => context.l10n.text('onDeviceDownloading'),
+      OnDeviceAiStatus.temporarilyUnavailable =>
+        context.l10n.text('onDeviceTemporarilyUnavailable'),
+      _ => context.l10n.text('onDeviceUnavailable'),
+    };
   }
 
   static void _showError(BuildContext context, String message) {

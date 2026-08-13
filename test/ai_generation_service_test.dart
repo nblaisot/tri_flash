@@ -446,6 +446,31 @@ void main() {
     );
   });
 
+  test('on-device corpus batches stay within local limits', () {
+    final entries = List.generate(
+      120,
+      (index) => VocabularyEntry(
+        id: index,
+        category: 'test',
+        word: 'word$index',
+        transcription: '',
+        translation: 'translation$index',
+      ),
+    );
+    final batches = AiGenerationService.batchCorpus(
+      entries,
+      maxEntries: AiGenerationService.onDeviceMaxCorpusEntries,
+      maxCharacters: AiGenerationService.onDeviceMaxCorpusCharacters,
+    );
+
+    expect(batches.length, greaterThan(1));
+    expect(batches.every((batch) => batch.length <= 50), isTrue);
+    expect(
+      batches.expand((batch) => batch).map((entry) => entry.id).toSet(),
+      hasLength(120),
+    );
+  });
+
   test('batches every corpus entry without random omission', () {
     final entries = List.generate(
       401,

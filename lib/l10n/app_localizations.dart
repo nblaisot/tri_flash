@@ -65,6 +65,19 @@ class AppLocalizations {
       'chatgptExperimental': 'Experimental subscription access',
       'openaiProvider': 'OpenAI API key',
       'mistralProvider': 'Mistral API key',
+      'onDeviceProvider': 'On-device AI (private)',
+      'onDeviceProviderHelp': 'Runs on your phone. Vocabulary stays on the device.',
+      'onDeviceSetupAction': 'Set up',
+      'onDeviceDownloadTitle': 'Download on-device model',
+      'onDeviceDownloadBody':
+          'Tri Flash needs to download the on-device AI model once. After that, generation works offline and your prompts stay on this device.',
+      'onDeviceDownloadAction': 'Download model',
+      'onDeviceDownloading': 'The on-device model is downloading…',
+      'onDeviceUnavailable': 'On-device AI is not available on this device.',
+      'onDeviceTemporarilyUnavailable':
+          'On-device AI is temporarily unavailable. Try again later.',
+      'onDeviceReady': 'On-device AI is ready.',
+      'onDeviceDownloadRequired': 'Download the on-device model to continue.',
       'apiKey': 'API key',
       'save': 'Save',
       'configured': 'Configured',
@@ -75,10 +88,12 @@ class AppLocalizations {
       'deviceCode': 'One-time code',
       'copyCode': 'Copy code',
       'openBrowser': 'Open in browser',
-      'waitingForSignIn': 'Waiting for sign-in…',
+      'waitingForSignIn': 'Waiting for you to complete sign-in…',
+      'waitingForSignInHint':
+          'This is normal and does not mean your internet connection is down.',
       'privacyTitle': 'AI privacy notice',
       'privacyBody':
-          'Selected vocabulary and generation instructions will be sent to the AI provider you choose. ChatGPT/Codex subscription access is experimental; OpenAI and Mistral API usage is billed separately by those providers.',
+          'Selected vocabulary and generation instructions will be sent to the AI provider you choose. ChatGPT/Codex subscription access is experimental; OpenAI and Mistral API usage is billed separately by those providers. If you choose on-device AI, prompts stay on your phone and are not sent to a cloud provider.',
       'continueAction': 'Continue',
       'aiError': 'AI request failed',
       'providerError':
@@ -153,6 +168,22 @@ class AppLocalizations {
       'chatgptExperimental': 'Accès expérimental par abonnement',
       'openaiProvider': 'Clé API OpenAI',
       'mistralProvider': 'Clé API Mistral',
+      'onDeviceProvider': 'IA locale (confidentielle)',
+      'onDeviceProviderHelp':
+          'S’exécute sur votre téléphone. Le vocabulaire reste sur l’appareil.',
+      'onDeviceSetupAction': 'Configurer',
+      'onDeviceDownloadTitle': 'Télécharger le modèle local',
+      'onDeviceDownloadBody':
+          'Tri Flash doit télécharger une fois le modèle d’IA local. Ensuite, la génération fonctionne hors ligne et vos prompts restent sur cet appareil.',
+      'onDeviceDownloadAction': 'Télécharger le modèle',
+      'onDeviceDownloading': 'Le modèle local est en cours de téléchargement…',
+      'onDeviceUnavailable':
+          'L’IA locale n’est pas disponible sur cet appareil.',
+      'onDeviceTemporarilyUnavailable':
+          'L’IA locale est temporairement indisponible. Réessayez plus tard.',
+      'onDeviceReady': 'L’IA locale est prête.',
+      'onDeviceDownloadRequired':
+          'Téléchargez le modèle local pour continuer.',
       'apiKey': 'Clé API',
       'save': 'Enregistrer',
       'configured': 'Configuré',
@@ -163,10 +194,12 @@ class AppLocalizations {
       'deviceCode': 'Code à usage unique',
       'copyCode': 'Copier le code',
       'openBrowser': 'Ouvrir dans le navigateur',
-      'waitingForSignIn': 'En attente de connexion…',
+      'waitingForSignIn': 'En attente de la validation ChatGPT…',
+      'waitingForSignInHint':
+          'C’est normal : l’application attend que vous vous connectiez ci-dessus, pas que le réseau fonctionne.',
       'privacyTitle': 'Confidentialité et IA',
       'privacyBody':
-          'Le vocabulaire sélectionné et les instructions de génération seront envoyés au fournisseur d’IA choisi. L’accès par abonnement ChatGPT/Codex est expérimental ; les API OpenAI et Mistral sont facturées séparément par ces fournisseurs.',
+          'Le vocabulaire sélectionné et les instructions de génération seront envoyés au fournisseur d’IA choisi. L’accès par abonnement ChatGPT/Codex est expérimental ; les API OpenAI et Mistral sont facturées séparément par ces fournisseurs. Si vous choisissez l’IA locale, les prompts restent sur votre téléphone et ne sont pas envoyés à un fournisseur cloud.',
       'continueAction': 'Continuer',
       'aiError': 'Échec de la requête IA',
       'providerError':

@@ -1,12 +1,13 @@
 import 'dart:convert';
 
-enum AiProviderType { chatGpt, openAi, mistral }
+enum AiProviderType { chatGpt, openAi, mistral, onDevice }
 
 extension AiProviderTypeValue on AiProviderType {
   String get value => switch (this) {
     AiProviderType.chatGpt => 'chatgpt',
     AiProviderType.openAi => 'openai',
     AiProviderType.mistral => 'mistral',
+    AiProviderType.onDevice => 'on_device',
   };
 
   static AiProviderType? fromValue(String? value) {

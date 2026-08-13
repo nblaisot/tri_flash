@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:on_device_ai/on_device_ai.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/screens/ai/ai_setup_flow.dart';
+import 'package:tri_flash/services/ai/ai_feature_flags.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
 import 'package:tri_flash/services/ai/codex_auth_service.dart';
 import 'package:tri_flash/state/app_preferences.dart';
@@ -24,6 +26,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   bool _isInitializing = true;
   AiProviderType? _provider;
   bool _providerConfigured = false;
+  OnDeviceAiAvailability? _onDeviceAvailability;
   String _sourceLanguage = 'Auto';
   String _translationLanguage = 'Auto';
 
@@ -38,10 +41,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
       await _ttsService.initialize();
       await _ttsService.loadFromPrefs();
       _provider = await _aiSettings.getProvider();
+      if (_provider == AiProviderType.onDevice &&
+          !AiFeatureFlags.enableOnDeviceAi) {
+        _provider = null;
+      }
       _sourceLanguage = await _aiSettings.getSourceLanguage();
       _translationLanguage = await _aiSettings.getTranslationLanguage();
       if (_provider != null) {
         _providerConfigured = await _aiSettings.isConfigured(_provider!);
+      }
+      if (AiFeatureFlags.enableOnDeviceAi) {
+        _onDeviceAvailability = await _aiSettings.getOnDeviceAvailability();
       }
     } catch (e) {
       if (mounted) {
@@ -159,6 +169,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
       AiProviderType.chatGpt => l10n.text('chatgptProvider'),
       AiProviderType.openAi => l10n.text('openaiProvider'),
       AiProviderType.mistral => l10n.text('mistralProvider'),
+      AiProviderType.onDevice => l10n.text('onDeviceProvider'),
     };
 
     return Card(
@@ -182,6 +193,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
               decoration: InputDecoration(labelText: l10n.text('aiProvider')),
               items:
                   AiProviderType.values
+                      .where(
+                        (provider) =>
+                            provider != AiProviderType.onDevice ||
+                            AiFeatureFlags.enableOnDeviceAi,
+                      )
                       .map(
                         (provider) => DropdownMenuItem(
                           value: provider,
@@ -193,10 +209,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 if (provider == null) return;
                 await _aiSettings.setProvider(provider);
                 final configured = await _aiSettings.isConfigured(provider);
+                final onDeviceAvailability =
+                    AiFeatureFlags.enableOnDeviceAi
+                        ? await _aiSettings.getOnDeviceAvailability()
+                        : null;
                 if (mounted) {
                   setState(() {
                     _provider = provider;
                     _providerConfigured = configured;
+                    _onDeviceAvailability = onDeviceAvailability;
                   });
                 }
               },
@@ -227,19 +248,57 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         _provider!,
                         settings: _aiSettings,
                       );
+                      final availability =
+                          await _aiSettings.getOnDeviceAvailability();
                       if (mounted) {
-                        setState(() => _providerConfigured = configured);
+                        setState(() {
+                          _providerConfigured = configured;
+                          _onDeviceAvailability = availability;
+                        });
                       }
                     },
                     child: Text(
                       _provider == AiProviderType.chatGpt
                           ? l10n.text('signIn')
+                          : _provider == AiProviderType.onDevice
+                          ? l10n.text('onDeviceSetupAction')
                           : l10n.text('save'),
                     ),
                   ),
               ],
             ),
-            if (_providerConfigured) ...[
+            if (_provider == AiProviderType.onDevice &&
+                _onDeviceAvailability != null) ...[
+              const SizedBox(height: 8),
+              Text(
+                _onDeviceStatusLabel(l10n, _onDeviceAvailability!),
+                style: Theme.of(context).textTheme.bodySmall,
+              ),
+              if (_onDeviceAvailability!.status ==
+                  OnDeviceAiStatus.downloadRequired) ...[
+                const SizedBox(height: 8),
+                FilledButton.tonal(
+                  onPressed: () async {
+                    final configured = await AiSetupFlow.configureProvider(
+                      context,
+                      AiProviderType.onDevice,
+                      settings: _aiSettings,
+                    );
+                    final availability =
+                        await _aiSettings.getOnDeviceAvailability();
+                    if (mounted) {
+                      setState(() {
+                        _providerConfigured = configured;
+                        _onDeviceAvailability = availability;
+                      });
+                    }
+                  },
+                  child: Text(l10n.text('onDeviceDownloadAction')),
+                ),
+              ],
+            ],
+            if (_providerConfigured &&
+                _provider != AiProviderType.onDevice) ...[
               const SizedBox(height: 8),
               TextButton(
                 onPressed: () async {
@@ -616,5 +675,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final langName = languageNames[langCode] ?? langCode.toUpperCase();
     if (regionCode != null) return '$langName ($regionCode)';
     return langName;
+  }
+
+  String _onDeviceStatusLabel(
+    AppLocalizations l10n,
+    OnDeviceAiAvailability availability,
+  ) {
+    if (availability.message?.isNotEmpty == true) return availability.message!;
+    return switch (availability.status) {
+      OnDeviceAiStatus.ready => l10n.text('onDeviceReady'),
+      OnDeviceAiStatus.downloadRequired => l10n.text('onDeviceDownloadRequired'),
+      OnDeviceAiStatus.downloading => l10n.text('onDeviceDownloading'),
+      OnDeviceAiStatus.temporarilyUnavailable =>
+        l10n.text('onDeviceTemporarilyUnavailable'),
+      OnDeviceAiStatus.unsupported => l10n.text('onDeviceUnavailable'),
+    };
   }
 }

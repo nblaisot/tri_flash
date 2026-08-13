@@ -1,0 +1,21 @@
+name: on_device_ai
+description: On-device AI bridge for Tri Flash (ML Kit GenAI / Foundation Models).
+version: 0.0.1
+publish_to: 'none'
+
+environment:
+  sdk: ^3.7.0
+  flutter: ">=3.0.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: com.triflash.on_device_ai
+        pluginClass: OnDeviceAiPlugin
+      ios:
+        pluginClass: OnDeviceAiPlugin

@@ -5,6 +5,8 @@ import 'package:http/http.dart' as http;
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
 import 'package:tri_flash/services/ai/codex_auth_service.dart';
+import 'package:tri_flash/services/ai/ai_feature_flags.dart';
+import 'package:tri_flash/services/ai/on_device_ai_provider_client.dart';
 
 class AiProviderException implements Exception {
   const AiProviderException(this.message, {this.isTransient = false});
@@ -284,6 +286,13 @@ class AiProviderClientFactory {
           throw const AiProviderException('Mistral API key is not configured.');
         }
         return MistralProviderClient(key);
+      case AiProviderType.onDevice:
+        if (!AiFeatureFlags.enableOnDeviceAi) {
+          throw const AiProviderException(
+            'On-device AI is currently disabled.',
+          );
+        }
+        return OnDeviceAiProviderClient();
     }
   }
 }
