@@ -59,6 +59,9 @@ class MainScreenController extends ChangeNotifier {
     List<String> categories,
   ) => _wordService.loadActiveWordsForCategories(categories);
 
+  Future<List<Map<String, dynamic>>> loadAllWords() =>
+      _wordService.loadAllWords();
+
   /// Initiates services and loads the initial dataset.
   Future<void> initialise() async {
     if (_didInitialise) return;

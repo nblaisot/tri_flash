@@ -43,7 +43,11 @@ class _GeneratedTextViewerScreenState extends State<GeneratedTextViewerScreen> {
     final l10n = context.l10n;
     return Scaffold(
       appBar: AppBar(
-        title: Text(l10n.text('generateText')),
+        title: Text(
+          widget.text.title.isEmpty
+              ? l10n.text('generateText')
+              : widget.text.title,
+        ),
         actions: [
           IconButton(
             tooltip: l10n.text('copy'),

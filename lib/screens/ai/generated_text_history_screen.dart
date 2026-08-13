@@ -28,62 +28,89 @@ class _GeneratedTextHistoryScreenState
     if (mounted) setState(() => _items = items);
   }
 
+  Future<void> _confirmDelete(GeneratedText item) async {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder:
+          (dialogContext) => AlertDialog(
+            title: Text(l10n.text('deleteGeneratedTextTitle')),
+            content: Text(
+              l10n.text('deleteGeneratedTextBody', {
+                'title': item.title.isEmpty ? item.source : item.title,
+              }),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(dialogContext, false),
+                child: Text(l10n.text('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(dialogContext, true),
+                child: Text(l10n.text('delete')),
+              ),
+            ],
+          ),
+    );
+    if (confirmed != true || !mounted) return;
+    await _history.remove(item.id);
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final messenger = ScaffoldMessenger.of(context);
+    final theme = Theme.of(context);
     return Scaffold(
-      appBar: AppBar(
-        title: Text(l10n.text('textHistory')),
-        actions: [
-          IconButton(
-            tooltip: l10n.text('deleteHistory'),
-            onPressed:
-                _items?.isNotEmpty == true
-                    ? () async {
-                      await _history.clear();
-                      await _load();
-                      if (!mounted) return;
-                      messenger.showSnackBar(
-                        SnackBar(content: Text(l10n.text('historyCleared'))),
-                      );
-                    }
-                    : null,
-            icon: const Icon(Icons.delete_outline),
-          ),
-        ],
-      ),
+      appBar: AppBar(title: Text(l10n.text('textHistory'))),
       body:
           _items == null
               ? const Center(child: CircularProgressIndicator())
               : _items!.isEmpty
               ? Center(child: Text(l10n.text('noHistory')))
               : ListView.separated(
-                padding: const EdgeInsets.all(12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 8,
+                ),
                 itemCount: _items!.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
+                separatorBuilder: (_, _) => const Divider(height: 1),
                 itemBuilder: (context, index) {
                   final item = _items![index];
-                  return Card(
-                    child: ListTile(
-                      title: Text(
-                        item.source,
+                  return ListTile(
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    title: Text(
+                      item.title,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      style: theme.textTheme.titleMedium,
+                    ),
+                    subtitle: Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(
+                        item.titleTranslation,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
+                        style: theme.textTheme.bodyMedium?.copyWith(
+                          color: theme.colorScheme.onSurfaceVariant,
+                          fontSize:
+                              (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                              0.92,
+                        ),
                       ),
-                      subtitle: Text(
-                        '${item.createdAt.toLocal()}\n${l10n.text('historyDetails', {'count': item.targetWordCount, 'percent': item.outsideVocabularyPercent})}',
-                      ),
-                      isThreeLine: true,
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap:
-                          () => Navigator.of(context).push(
-                            MaterialPageRoute(
-                              builder:
-                                  (_) => GeneratedTextViewerScreen(text: item),
-                            ),
-                          ),
                     ),
+                    trailing: const Icon(Icons.chevron_right),
+                    onTap:
+                        () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder:
+                                (_) => GeneratedTextViewerScreen(text: item),
+                          ),
+                        ),
+                    onLongPress: () => _confirmDelete(item),
                   );
                 },
               ),

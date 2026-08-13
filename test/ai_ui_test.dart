@@ -54,6 +54,8 @@ void main() {
   ) async {
     final generated = GeneratedText(
       id: '1',
+      title: 'Salutation',
+      titleTranslation: 'Greeting',
       source: 'Bonjour !',
       translation: 'Hello!',
       createdAt: DateTime.utc(2026),

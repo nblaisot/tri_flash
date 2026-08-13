@@ -39,27 +39,21 @@ class _FakeFactory extends AiProviderClientFactory {
   Future<AiProviderClient> create(AiProviderType provider) async => client;
 }
 
-String _analysis(List<VocabularyEntry> entries) => jsonEncode({
-  'entries': [
-    for (final entry in entries)
-      {
-        'id': '${entry.id}',
-        'kind': entry.word.endsWith('.') ? 'structure' : 'lexical',
-        'lexicalTargets': entry.word.endsWith('.') ? <String>[] : [entry.word],
-        'grammarStructures':
-            entry.word.endsWith('.') ? ['subject + verb'] : <String>[],
-      },
-  ],
-});
+const _salut = VocabularyEntry(
+  id: 10,
+  category: 'test',
+  word: 'Salut',
+  transcription: 'sa.ly',
+  translation: 'hello',
+);
 
-String _annotations(List<Map<String, Object>> words) =>
-    jsonEncode({'words': words});
-
-Map<String, Object> _word(String surface, String translation) => {
-  'surface': surface,
-  'pronunciation': 'pron-$surface',
-  'contextualTranslation': translation,
-};
+const _ami = VocabularyEntry(
+  id: 11,
+  category: 'test',
+  word: 'ami',
+  transcription: 'a.mi',
+  translation: 'friend',
+);
 
 void main() {
   setUp(() {
@@ -73,7 +67,11 @@ void main() {
   test('parses a bilingual sentence JSON response', () async {
     final settings = AiSettingsService();
     final client = _FakeClient([
-      jsonEncode({'source': 'Je vois un chat.', 'translation': 'I see a cat.'}),
+      jsonEncode({
+        'source': 'Je vois un chat.',
+        'transcription': 'ʒə vwa œ̃ ʃa',
+        'translation': 'I see a cat.',
+      }),
     ]);
     final service = AiGenerationService(
       settings: settings,
@@ -91,15 +89,16 @@ void main() {
     );
 
     expect(result.source, 'Je vois un chat.');
+    expect(result.transcription, 'ʒə vwa œ̃ ʃa');
     expect(result.translation, 'I see a cat.');
-    expect(client.tokenLimits, [AiGenerationService.analysisOutputTokens]);
+    expect(client.tokenLimits, [AiGenerationService.sentenceOutputTokens]);
   });
 
   test('retries once when the provider returns malformed JSON', () async {
     final settings = AiSettingsService();
     final client = _FakeClient([
       'not json',
-      '{"source":"bonjour","translation":"hello"}',
+      '{"source":"bonjour","transcription":"bɔ̃.ʒuʁ","translation":"hello"}',
     ]);
     final service = AiGenerationService(
       settings: settings,
@@ -117,10 +116,11 @@ void main() {
     );
 
     expect(result.translation, 'hello');
+    expect(result.transcription, 'bɔ̃.ʒuʁ');
     expect(client.calls, 2);
   });
 
-  test('analyzes the full corpus and produces complete annotations', () async {
+  test('generates bilingual text in one LLM call then annotates locally', () async {
     final settings = AiSettingsService();
     const entries = [
       VocabularyEntry(
@@ -139,10 +139,12 @@ void main() {
       ),
     ];
     final client = _FakeClient([
-      _analysis(entries),
-      jsonEncode({'source': 'Salut ami', 'translation': 'Hello friend'}),
-      _annotations([_word('Salut', 'Hello'), _word('ami', 'friend')]),
-      _annotations([_word('Hello', 'Salut'), _word('friend', 'ami')]),
+      jsonEncode({
+        'title': 'Salut à un ami',
+        'titleTranslation': 'Hello to a friend',
+        'source': 'Salut ami',
+        'translation': 'Hello friend',
+      }),
     ]);
     final service = AiGenerationService(
       settings: settings,
@@ -152,6 +154,7 @@ void main() {
 
     final generated = await service.generateText(
       availableVocabulary: entries,
+      annotationVocabulary: const [_salut, _ami],
       categories: const ['test'],
       targetWordCount: 20,
       outsideVocabularyPercent: 5,
@@ -162,17 +165,78 @@ void main() {
       'Salut',
       'ami',
     ]);
-    expect(generated.translationAnnotations, hasLength(2));
+    expect(generated.title, 'Salut à un ami');
+    expect(generated.titleTranslation, 'Hello to a friend');
+    expect(generated.sourceAnnotations.first.pronunciation, 'sa.ly');
+    expect(generated.sourceAnnotations.last.contextualTranslation, 'friend');
+    expect(generated.translationAnnotations, isEmpty);
     expect(generated.sourceAnnotations.last.start, 6);
-    expect(client.prompts.first, contains('"id":"1"'));
-    expect(client.prompts.first, contains('"id":"2"'));
-    expect(client.prompts[1], contains('Forbidden verbatim sentences'));
-    expect(client.prompts[1], contains('Je vais au marché.'));
-    expect(client.tokenLimits, [4000, 8000, 4000, 4000]);
-    expect(progress.last.stage, AiGenerationStage.saving);
+    expect(client.calls, 1);
+    expect(client.tokenLimits, [8000]);
+    expect(client.prompts.single, contains('"source":"bonjour"'));
+    expect(client.prompts.single, contains('Je vais au marché.'));
+    expect(
+      client.prompts.single,
+      contains('Distinguish short reusable items'),
+    );
+    expect(
+      client.prompts.single,
+      contains('Never copy any sentence-like source'),
+    );
+    expect(progress.map((item) => item.stage).toList(), [
+      AiGenerationStage.generatingText,
+      AiGenerationStage.annotatingSource,
+      AiGenerationStage.saving,
+    ]);
   });
 
-  test('rejects annotations that leave lexical text unannotated', () async {
+  test('fails fast when the corpus has too many entries', () async {
+    final settings = AiSettingsService();
+    final entries = List.generate(
+      AiGenerationService.maxCorpusEntries + 1,
+      (index) => VocabularyEntry(
+        id: index,
+        category: 'test',
+        word: 'w$index',
+        transcription: '',
+        translation: 't$index',
+      ),
+    );
+    final service = AiGenerationService(
+      settings: settings,
+      clientFactory: _FakeFactory(settings, _FakeClient([])),
+    );
+
+    await expectLater(
+      service.generateText(
+        availableVocabulary: entries,
+        annotationVocabulary: entries,
+        categories: const ['test'],
+        targetWordCount: 20,
+        outsideVocabularyPercent: 5,
+      ),
+      throwsA(isA<AiCorpusTooLargeException>()),
+    );
+  });
+
+  test('fails fast when the serialized corpus exceeds the character limit', () {
+    expect(
+      AiGenerationService.isCorpusTooLarge(
+        entryCount: 10,
+        corpusJsonCharacters: AiGenerationService.maxCorpusCharacters + 1,
+      ),
+      isTrue,
+    );
+    expect(
+      AiGenerationService.isCorpusTooLarge(
+        entryCount: 10,
+        corpusJsonCharacters: AiGenerationService.maxCorpusCharacters,
+      ),
+      isFalse,
+    );
+  });
+
+  test('maps provider context-length errors to corpus too large', () async {
     final settings = AiSettingsService();
     const entry = VocabularyEntry(
       id: 1,
@@ -181,12 +245,10 @@ void main() {
       transcription: '',
       translation: 'hello',
     );
-    final invalid = _annotations([]);
     final client = _FakeClient([
-      _analysis([entry]),
-      jsonEncode({'source': 'Salut', 'translation': 'Hello'}),
-      invalid,
-      invalid,
+      const AiProviderException(
+        'OpenAI request failed (400): context_length_exceeded',
+      ),
     ]);
     final service = AiGenerationService(
       settings: settings,
@@ -196,247 +258,176 @@ void main() {
     await expectLater(
       service.generateText(
         availableVocabulary: const [entry],
+        annotationVocabulary: const [entry],
         categories: const ['test'],
         targetWordCount: 20,
         outsideVocabularyPercent: 5,
       ),
-      throwsA(isA<AiAnnotationException>()),
+      throwsA(isA<AiCorpusTooLargeException>()),
     );
   });
 
-  test('accepts complete accented, Arabic, and CJK annotations', () async {
-    final settings = AiSettingsService();
-    const entry = VocabularyEntry(
-      id: 1,
-      category: 'test',
-      word: 'été',
-      transcription: '',
-      translation: 'summer',
+  test('detects common corpus size error messages', () {
+    expect(
+      AiGenerationService.isCorpusSizeProviderError(
+        'maximum context length exceeded',
+      ),
+      isTrue,
     );
-    final client = _FakeClient([
-      _analysis([entry]),
-      jsonEncode({
-        'source': 'été مرحبا 世界',
-        'translation': 'summer hello world',
-      }),
-      _annotations([
-        _word('été', 'summer'),
-        _word('مرحبا', 'hello'),
-        _word('世界', 'world'),
-      ]),
-      _annotations([
-        _word('summer', 'été'),
-        _word('hello', 'مرحبا'),
-        _word('world', '世界'),
-      ]),
-    ]);
-    final service = AiGenerationService(
-      settings: settings,
-      clientFactory: _FakeFactory(settings, client),
+    expect(
+      AiGenerationService.isCorpusSizeProviderError('HTTP 413 Payload Too Large'),
+      isTrue,
     );
-
-    final result = await service.generateText(
-      availableVocabulary: const [entry],
-      categories: const ['test'],
-      targetWordCount: 20,
-      outsideVocabularyPercent: 5,
+    expect(
+      AiGenerationService.isCorpusSizeProviderError('rate limit exceeded'),
+      isFalse,
     );
-
-    expect(result.sourceAnnotations.map((item) => item.surface), [
-      'été',
-      'مرحبا',
-      '世界',
-    ]);
-    expect(result.sourceAnnotations.last.end, result.source.length);
   });
 
-  test('aligns words while preserving punctuation and whitespace locally', () {
-    const text = ' \nBonjour, l’été — مرحبا، שָׁלוֹם! 世界。Bonjour ';
-    final words = [
-      _word('Bonjour', 'Hello'),
-      _word('l’été', 'the summer'),
-      _word('مرحبا', 'hello'),
-      _word('שָׁלוֹם', 'peace'),
-      _word('世界', 'world'),
-      _word('Bonjour', 'Hello'),
+  test('prefers longer compound matches over shorter prefixes', () {
+    const vocabulary = [
+      VocabularyEntry(
+        id: 1,
+        category: 'test',
+        word: '中',
+        transcription: 'zhōng',
+        translation: 'middle',
+      ),
+      VocabularyEntry(
+        id: 2,
+        category: 'test',
+        word: '中国',
+        transcription: 'Zhōngguó',
+        translation: 'China',
+      ),
     ];
 
-    final annotations = AiGenerationService.alignAnnotationWords(text, words);
+    final annotations = AiGenerationService.annotateWithVocabulary(
+      '我在中国。',
+      vocabulary,
+    );
 
-    expect(annotations.map((item) => item.surface), [
-      'Bonjour',
-      'l’été',
-      'مرحبا',
-      'שָׁלוֹם',
-      '世界',
-      'Bonjour',
-    ]);
-    for (final annotation in annotations) {
-      expect(
-        text.substring(annotation.start, annotation.end),
-        annotation.surface,
-      );
-    }
-    expect(annotations.first.start, 2);
-    expect(annotations.last.start, text.lastIndexOf('Bonjour'));
+    expect(annotations.map((item) => item.surface), ['中国']);
+    expect(annotations.single.pronunciation, 'Zhōngguó');
   });
 
-  test('applies global offsets without including separators', () {
-    const text = 'Hello, world!';
-    final annotations = AiGenerationService.alignAnnotationWords(text, [
-      _word('Hello', 'Bonjour'),
-      _word('world', 'monde'),
-    ], globalOffset: 120);
-
-    expect(annotations.first.start, 120);
-    expect(annotations.first.end, 125);
-    expect(annotations.last.start, 127);
-    expect(annotations.last.end, 132);
-  });
-
-  test('rejects omitted, altered, reordered, duplicate, and invalid words', () {
-    final invalidWordLists = <List<Map<String, Object>>>[
-      [_word('one', 'un'), _word('three', 'trois')],
-      [_word('One', 'un'), _word('two', 'deux'), _word('three', 'trois')],
-      [_word('two', 'deux'), _word('one', 'un'), _word('three', 'trois')],
-      [
-        _word('one', 'un'),
-        _word('two', 'deux'),
-        _word('three', 'trois'),
-        _word('three', 'trois'),
-      ],
-      [_word('one,', 'un'), _word('two', 'deux'), _word('three', 'trois')],
-      [
-        {'surface': 'one', 'pronunciation': '', 'contextualTranslation': 'un'},
-        _word('two', 'deux'),
-        _word('three', 'trois'),
-      ],
-      [
-        {
-          'surface': ',',
-          'pronunciation': 'comma',
-          'contextualTranslation': 'virgule',
-        },
-      ],
+  test('leaves unknown words unannotated and skips punctuation', () {
+    const vocabulary = [
+      VocabularyEntry(
+        id: 1,
+        category: 'test',
+        word: 'été',
+        transcription: 'e.te',
+        translation: 'summer',
+      ),
     ];
 
-    for (final words in invalidWordLists) {
-      expect(
-        () => AiGenerationService.alignAnnotationWords('one two three', words),
-        throwsA(isA<Exception>()),
-      );
-    }
+    final annotations = AiGenerationService.annotateWithVocabulary(
+      'été مرحبا 世界',
+      vocabulary,
+    );
+
+    expect(annotations, hasLength(1));
+    expect(annotations.single.surface, 'été');
+    expect(annotations.single.end, 3);
   });
 
-  test('targeted retry recovers an omitted word annotation', () async {
-    final settings = AiSettingsService();
-    const entry = VocabularyEntry(
-      id: 1,
-      category: 'test',
-      word: 'bonjour',
-      transcription: '',
-      translation: 'hello',
-    );
-    final client = _FakeClient([
-      _analysis([entry]),
-      jsonEncode({'source': 'Salut ami', 'translation': 'Hello friend'}),
-      _annotations([_word('Salut', 'Hello')]),
-      _annotations([_word('Salut', 'Hello'), _word('ami', 'friend')]),
-      _annotations([_word('Hello', 'Salut'), _word('friend', 'ami')]),
-    ]);
-    final service = AiGenerationService(
-      settings: settings,
-      clientFactory: _FakeFactory(settings, client),
-    );
+  test('prefers active entries when duplicate surfaces exist', () {
+    const vocabulary = [
+      VocabularyEntry(
+        id: 1,
+        category: 'a',
+        word: '朋友',
+        transcription: 'inactive',
+        translation: 'inactive meaning',
+        isActive: false,
+      ),
+      VocabularyEntry(
+        id: 2,
+        category: 'b',
+        word: '朋友',
+        transcription: 'péngyou',
+        translation: 'friend',
+        isActive: true,
+      ),
+    ];
 
-    final result = await service.generateText(
-      availableVocabulary: const [entry],
-      categories: const ['test'],
-      targetWordCount: 20,
-      outsideVocabularyPercent: 5,
-    );
+    final index = AiGenerationService.buildVocabularyIndex(vocabulary);
+    expect(index['朋友']!.transcription, 'péngyou');
 
-    expect(result.sourceAnnotations, hasLength(2));
-    expect(client.calls, 5);
-    expect(client.prompts[3], contains('at the end were omitted'));
+    final annotations = AiGenerationService.annotateWithVocabulary(
+      '我的朋友',
+      vocabulary,
+    );
+    expect(annotations.single.pronunciation, 'péngyou');
   });
 
-  test('annotation failure identifies the language stage and chunk', () async {
-    final settings = AiSettingsService();
-    const entry = VocabularyEntry(
-      id: 1,
-      category: 'test',
-      word: 'bonjour',
-      transcription: '',
-      translation: 'hello',
-    );
-    final client = _FakeClient([
-      _analysis([entry]),
-      jsonEncode({'source': 'Salut', 'translation': 'Hello'}),
-      _annotations([]),
-      _annotations([]),
-    ]);
-    final service = AiGenerationService(
-      settings: settings,
-      clientFactory: _FakeFactory(settings, client),
+  test('copies transcription and translation from vocabulary entries', () {
+    const vocabulary = [
+      VocabularyEntry(
+        id: 1,
+        category: 'test',
+        word: '你好',
+        transcription: 'nǐ hǎo',
+        translation: 'hello',
+      ),
+    ];
+
+    final annotations = AiGenerationService.annotateWithVocabulary(
+      '你好',
+      vocabulary,
     );
 
-    try {
-      await service.generateText(
-        availableVocabulary: const [entry],
-        categories: const ['test'],
-        targetWordCount: 20,
-        outsideVocabularyPercent: 5,
-      );
-      fail('Expected annotation generation to fail.');
-    } on AiAnnotationException catch (error) {
-      expect(error.stage, AiGenerationStage.annotatingSource);
-      expect(error.chunk, 1);
-      expect(error.totalChunks, 1);
-    }
+    expect(annotations.single.pronunciation, 'nǐ hǎo');
+    expect(annotations.single.contextualTranslation, 'hello');
   });
 
-  test('maintains exact global offsets across multiple chunks', () async {
+  test('annotates long source text in one local pass', () async {
     final settings = AiSettingsService();
     const entry = VocabularyEntry(
       id: 1,
       category: 'test',
       word: 'mot',
-      transcription: '',
+      transcription: 'mo',
       translation: 'word',
     );
     final source = List.generate(90, (index) => 'mot$index').join(' ');
-    final translation = List.generate(90, (index) => 'word$index').join(' ');
-    final responses = <Object>[
-      _analysis([entry]),
-      jsonEncode({'source': source, 'translation': translation}),
-    ];
-    for (final text in [source, translation]) {
-      for (final chunk in AiGenerationService.chunkText(text)) {
-        responses.add(
-          _annotations([
-            for (final match in RegExp(r'[A-Za-z0-9]+').allMatches(chunk))
-              _word(match.group(0)!, 'translation'),
-          ]),
-        );
-      }
-    }
     final service = AiGenerationService(
       settings: settings,
-      clientFactory: _FakeFactory(settings, _FakeClient(responses)),
+      clientFactory: _FakeFactory(
+        settings,
+        _FakeClient([
+          jsonEncode({
+            'title': 'Lots of words',
+            'titleTranslation': 'Beaucoup de mots',
+            'source': source,
+            'translation': 'translation',
+          }),
+        ]),
+      ),
+    );
+    final annotationVocabulary = List.generate(
+      90,
+      (index) => VocabularyEntry(
+        id: index + 2,
+        category: 'test',
+        word: 'mot$index',
+        transcription: 'mo$index',
+        translation: 'word$index',
+      ),
     );
 
     final result = await service.generateText(
       availableVocabulary: const [entry],
+      annotationVocabulary: annotationVocabulary,
       categories: const ['test'],
       targetWordCount: 500,
       outsideVocabularyPercent: 5,
     );
 
     expect(result.sourceAnnotations, hasLength(90));
-    expect(result.translationAnnotations, hasLength(90));
+    expect(result.translationAnnotations, isEmpty);
     expect(result.sourceAnnotations.last.end, source.length);
-    expect(result.translationAnnotations.last.end, translation.length);
     expect(
       result.source.substring(
         result.sourceAnnotations[80].start,
@@ -444,51 +435,7 @@ void main() {
       ),
       'mot80',
     );
-  });
-
-  test('on-device corpus batches stay within local limits', () {
-    final entries = List.generate(
-      120,
-      (index) => VocabularyEntry(
-        id: index,
-        category: 'test',
-        word: 'word$index',
-        transcription: '',
-        translation: 'translation$index',
-      ),
-    );
-    final batches = AiGenerationService.batchCorpus(
-      entries,
-      maxEntries: AiGenerationService.onDeviceMaxCorpusEntries,
-      maxCharacters: AiGenerationService.onDeviceMaxCorpusCharacters,
-    );
-
-    expect(batches.length, greaterThan(1));
-    expect(batches.every((batch) => batch.length <= 50), isTrue);
-    expect(
-      batches.expand((batch) => batch).map((entry) => entry.id).toSet(),
-      hasLength(120),
-    );
-  });
-
-  test('batches every corpus entry without random omission', () {
-    final entries = List.generate(
-      401,
-      (index) => VocabularyEntry(
-        id: index,
-        category: 'test',
-        word: 'word$index',
-        transcription: '',
-        translation: 'translation$index',
-      ),
-    );
-    final batches = AiGenerationService.batchCorpus(entries);
-
-    expect(batches.map((batch) => batch.length), [200, 200, 1]);
-    expect(
-      batches.expand((batch) => batch).map((entry) => entry.id).toSet(),
-      hasLength(401),
-    );
+    expect(result.sourceAnnotations, hasLength(90));
   });
 
   test('chunks text within character and estimated lexical limits', () {
@@ -523,6 +470,7 @@ void main() {
       await expectLater(
         service.generateText(
           availableVocabulary: const [entry],
+          annotationVocabulary: const [entry],
           categories: const ['test'],
           targetWordCount: invalid,
           outsideVocabularyPercent: 5,
@@ -543,6 +491,15 @@ void main() {
     await expectLater(
       service.generateText(
         availableVocabulary: const [
+          VocabularyEntry(
+            id: 1,
+            category: 'test',
+            word: 'word',
+            transcription: '',
+            translation: 'mot',
+          ),
+        ],
+        annotationVocabulary: const [
           VocabularyEntry(
             id: 1,
             category: 'test',

@@ -7,7 +7,7 @@ class GeneratedTextHistoryService {
   GeneratedTextHistoryService({Future<Database> Function()? database})
     : _database = database ?? (() => DatabaseHelper.instance.database);
 
-  static const maxItems = 20;
+  static const maxItems = 50;
   static const _legacyKey = 'generated_text_history_v1';
   static const _migrationKey = 'generated_text_history_v2_migrated';
   static final _store = stringMapStoreFactory.store(

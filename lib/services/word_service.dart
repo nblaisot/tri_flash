@@ -79,6 +79,13 @@ class WordService {
     };
   }
 
+  Future<List<Map<String, dynamic>>> loadAllWords() async {
+    final records = await DatabaseHelper.instance.queryAllRows();
+    return records
+        .map((record) => <String, dynamic>{...record.value, 'id': record.key})
+        .toList();
+  }
+
   Future<List<Map<String, dynamic>>> loadActiveWordsForCategories(
     List<String> categories,
   ) async {

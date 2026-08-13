@@ -25,6 +25,7 @@ class VocabularyEntry {
     required this.word,
     required this.transcription,
     required this.translation,
+    this.isActive = true,
   });
 
   factory VocabularyEntry.fromMap(Map<String, dynamic> map) => VocabularyEntry(
@@ -33,6 +34,7 @@ class VocabularyEntry {
     word: map['word']?.toString() ?? '',
     transcription: map['transcription']?.toString() ?? '',
     translation: map['translation']?.toString() ?? '',
+    isActive: map.containsKey('isActive') ? map['isActive'] == 1 : true,
   );
 
   factory VocabularyEntry.fromJson(Map<String, dynamic> json) =>
@@ -42,6 +44,7 @@ class VocabularyEntry {
         word: json['word']?.toString() ?? '',
         transcription: json['transcription']?.toString() ?? '',
         translation: json['translation']?.toString() ?? '',
+        isActive: json.containsKey('isActive') ? json['isActive'] == 1 : true,
       );
 
   final int id;
@@ -49,6 +52,7 @@ class VocabularyEntry {
   final String word;
   final String transcription;
   final String translation;
+  final bool isActive;
 
   Map<String, dynamic> toJson() => {
     'id': id,
@@ -60,9 +64,14 @@ class VocabularyEntry {
 }
 
 class BilingualSentence {
-  const BilingualSentence({required this.source, required this.translation});
+  const BilingualSentence({
+    required this.source,
+    required this.transcription,
+    required this.translation,
+  });
 
   final String source;
+  final String transcription;
   final String translation;
 }
 
@@ -101,6 +110,8 @@ class WordAnnotation {
 class GeneratedText {
   const GeneratedText({
     required this.id,
+    required this.title,
+    required this.titleTranslation,
     required this.source,
     required this.translation,
     required this.createdAt,
@@ -112,32 +123,49 @@ class GeneratedText {
     required this.translationAnnotations,
   });
 
-  factory GeneratedText.fromJson(Map<String, dynamic> json) => GeneratedText(
-    id: json['id'] as String,
-    source: json['source'] as String,
-    translation: json['translation'] as String,
-    createdAt: DateTime.parse(json['createdAt'] as String),
-    categories: (json['categories'] as List<dynamic>).cast<String>(),
-    targetWordCount: json['targetWordCount'] as int,
-    outsideVocabularyPercent: json['outsideVocabularyPercent'] as int,
-    provider:
-        AiProviderTypeValue.fromValue(json['provider'] as String?) ??
-        AiProviderType.openAi,
-    sourceAnnotations:
-        (json['sourceAnnotations'] as List<dynamic>)
-            .map(
-              (item) => WordAnnotation.fromJson(item as Map<String, dynamic>),
-            )
-            .toList(),
-    translationAnnotations:
-        (json['translationAnnotations'] as List<dynamic>)
-            .map(
-              (item) => WordAnnotation.fromJson(item as Map<String, dynamic>),
-            )
-            .toList(),
-  );
+  factory GeneratedText.fromJson(Map<String, dynamic> json) {
+    final source = json['source'] as String? ?? '';
+    final translation = json['translation'] as String? ?? '';
+    return GeneratedText(
+      id: json['id'] as String,
+      title: _titleFromJson(json['title'], source),
+      titleTranslation: _titleFromJson(json['titleTranslation'], translation),
+      source: source,
+      translation: translation,
+      createdAt: DateTime.parse(json['createdAt'] as String),
+      categories: (json['categories'] as List<dynamic>).cast<String>(),
+      targetWordCount: json['targetWordCount'] as int,
+      outsideVocabularyPercent: json['outsideVocabularyPercent'] as int,
+      provider:
+          AiProviderTypeValue.fromValue(json['provider'] as String?) ??
+          AiProviderType.openAi,
+      sourceAnnotations:
+          (json['sourceAnnotations'] as List<dynamic>? ?? const [])
+              .map(
+                (item) => WordAnnotation.fromJson(item as Map<String, dynamic>),
+              )
+              .toList(),
+      translationAnnotations:
+          (json['translationAnnotations'] as List<dynamic>? ?? const [])
+              .map(
+                (item) => WordAnnotation.fromJson(item as Map<String, dynamic>),
+              )
+              .toList(),
+    );
+  }
+
+  static String _titleFromJson(Object? raw, String fallbackBody) {
+    if (raw is String && raw.trim().isNotEmpty) return raw.trim();
+    final collapsed = fallbackBody.replaceAll(RegExp(r'\s+'), ' ').trim();
+    if (collapsed.isEmpty) return '';
+    return collapsed.length <= 48
+        ? collapsed
+        : '${collapsed.substring(0, 48).trimRight()}…';
+  }
 
   final String id;
+  final String title;
+  final String titleTranslation;
   final String source;
   final String translation;
   final DateTime createdAt;
@@ -150,6 +178,8 @@ class GeneratedText {
 
   Map<String, dynamic> toJson() => {
     'id': id,
+    'title': title,
+    'titleTranslation': titleTranslation,
     'source': source,
     'translation': translation,
     'createdAt': createdAt.toIso8601String(),

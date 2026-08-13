@@ -259,6 +259,12 @@ class _MainScreenState extends State<MainScreen> {
                   SelectableText(sentence.source),
                   const SizedBox(height: 16),
                   Text(
+                    dialogContext.l10n.text('transcription'),
+                    style: Theme.of(dialogContext).textTheme.labelLarge,
+                  ),
+                  SelectableText(sentence.transcription),
+                  const SizedBox(height: 16),
+                  Text(
                     dialogContext.l10n.text('translationText'),
                     style: Theme.of(dialogContext).textTheme.labelLarge,
                   ),
@@ -270,7 +276,8 @@ class _MainScreenState extends State<MainScreen> {
                   onPressed: () async {
                     await Clipboard.setData(
                       ClipboardData(
-                        text: '${sentence.source}\n${sentence.translation}',
+                        text:
+                            '${sentence.source}\n${sentence.transcription}\n${sentence.translation}',
                       ),
                     );
                     if (dialogContext.mounted) {
@@ -328,15 +335,20 @@ class _MainScreenState extends State<MainScreen> {
       ).showSnackBar(SnackBar(content: Text(context.l10n.text('noWords'))));
       return;
     }
+    final allWordMaps = await _controller.loadAllWords();
+    if (!mounted) return;
+    final annotationVocabulary =
+        allWordMaps.map(VocabularyEntry.fromMap).toList();
     final cancellationToken = AiCancellationToken();
     _activeGeneration = cancellationToken;
     final progress = ValueNotifier<AiGenerationProgress>(
-      const AiGenerationProgress(AiGenerationStage.analyzingCorpus),
+      const AiGenerationProgress(AiGenerationStage.generatingText),
     );
     _showGenerationProgress(progress, cancellationToken);
     try {
       final generated = await _aiGeneration.generateText(
         availableVocabulary: vocabulary,
+        annotationVocabulary: annotationVocabulary,
         categories: options.categories,
         targetWordCount: options.targetWordCount,
         outsideVocabularyPercent: options.outsideVocabularyPercent,
@@ -362,10 +374,10 @@ class _MainScreenState extends State<MainScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text(context.l10n.text('generationCancelled'))),
       );
-    } on AiAnnotationException catch (error) {
+    } on AiCorpusTooLargeException {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
-      _showAnnotationError(error);
+      _showAiError(context.l10n.text('corpusTooLarge'));
     } catch (error) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
@@ -376,32 +388,6 @@ class _MainScreenState extends State<MainScreen> {
       }
       progress.dispose();
     }
-  }
-
-  void _showAnnotationError(AiAnnotationException error) {
-    final key =
-        error.stage == AiGenerationStage.annotatingSource
-            ? 'sourceAnnotationFailed'
-            : 'translationAnnotationFailed';
-    showDialog<void>(
-      context: context,
-      builder:
-          (context) => AlertDialog(
-            title: Text(context.l10n.text('aiError')),
-            content: Text(
-              context.l10n.text(key, {
-                'current': error.chunk,
-                'total': error.totalChunks,
-              }),
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context),
-                child: Text(context.l10n.text('close')),
-              ),
-            ],
-          ),
-    );
   }
 
   void _showGenerationProgress(
@@ -440,10 +426,8 @@ class _MainScreenState extends State<MainScreen> {
       if (progress.total != null) 'total': progress.total!,
     };
     final key = switch (progress.stage) {
-      AiGenerationStage.analyzingCorpus => 'analyzingCorpus',
       AiGenerationStage.generatingText => 'generatingBilingualText',
       AiGenerationStage.annotatingSource => 'annotatingSource',
-      AiGenerationStage.annotatingTranslation => 'annotatingTranslation',
       AiGenerationStage.saving => 'savingGeneratedText',
     };
     return context.l10n.text(key, values);
