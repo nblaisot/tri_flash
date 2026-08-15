@@ -1,19 +1,24 @@
 import 'package:flutter/material.dart';
 
+/// Modal bottom sheet allowing the user to pick which categories are active.
 class CategorySelectionModal extends StatefulWidget {
-  final List<String> categories;
-  final List<String> selectedCategories;
-  final Function(List<String>) onSelectionChanged;
-
   const CategorySelectionModal({
-    Key? key,
+    super.key,
     required this.categories,
     required this.selectedCategories,
     required this.onSelectionChanged,
-  }) : super(key: key);
+    this.title = 'Select Categories',
+    this.doneLabel = 'Done',
+  });
+
+  final List<String> categories;
+  final List<String> selectedCategories;
+  final Function(List<String>) onSelectionChanged;
+  final String title;
+  final String doneLabel;
 
   @override
-  _CategorySelectionModalState createState() => _CategorySelectionModalState();
+  State<CategorySelectionModal> createState() => _CategorySelectionModalState();
 }
 
 class _CategorySelectionModalState extends State<CategorySelectionModal> {
@@ -32,19 +37,18 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
       padding: const EdgeInsets.all(16.0),
       child: Column(
         children: [
-          const Text(
-            "Select Categories",
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+          Text(
+            widget.title,
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 8),
           Expanded(
             child: ListView.builder(
               itemCount: widget.categories.length,
               itemBuilder: (context, index) {
-                String cat = widget.categories[index];
-                bool isSelected = _tempSelection.contains(cat);
+                final cat = widget.categories[index];
+                final isSelected = _tempSelection.contains(cat);
                 return CheckboxListTile(
-                  activeColor: const Color(0xFFFFC107),
                   controlAffinity: ListTileControlAffinity.leading,
                   title: Text(
                     cat,
@@ -72,7 +76,7 @@ class _CategorySelectionModalState extends State<CategorySelectionModal> {
               widget.onSelectionChanged(_tempSelection);
               Navigator.pop(context);
             },
-            child: const Text("Done"),
+            child: Text(widget.doneLabel),
           ),
         ],
       ),

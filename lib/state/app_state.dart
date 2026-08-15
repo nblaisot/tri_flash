@@ -1,5 +1,6 @@
 import 'package:shared_preferences/shared_preferences.dart';
 
+/// Holds transient UI state for the main screen and onboarding flow.
 class AppState {
   // Words data
   List<Map<String, dynamic>> words = [];
@@ -45,7 +46,7 @@ class AppState {
   }
 
   Future<bool> shouldShowOnboarding() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     return !(prefs.getBool('onboarding_done') ?? false);
   }
 
@@ -61,7 +62,7 @@ class AppState {
   }
 
   Future<void> completeOnboarding() async {
-    SharedPreferences prefs = await SharedPreferences.getInstance();
+    final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('onboarding_done', true);
     showOnboarding = false;
     onboardingStep = 0;
