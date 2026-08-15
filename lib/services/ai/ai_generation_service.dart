@@ -8,6 +8,7 @@ import 'package:tri_flash/services/ai/ai_settings_service.dart';
 
 enum AiGenerationStage {
   generatingText,
+  generatingQuiz,
   annotatingSource,
   saving,
 }
@@ -40,9 +41,15 @@ class AiGenerationService {
   /// Short JSON responses (e.g. single example sentence).
   static const sentenceOutputTokens = 4000;
   static const textOutputTokens = 8000;
+  static const quizOutputTokens = 8000;
+  static const checkOutputTokens = 2000;
 
   static const onDeviceSentenceOutputTokens = 2048;
   static const onDeviceTextOutputTokens = 4096;
+  static const onDeviceQuizOutputTokens = 4096;
+  static const onDeviceCheckOutputTokens = 1024;
+
+  static const allowedQuizSentenceCounts = {5, 10, 15, 20};
 
   static const maxCorpusEntries = 800;
   static const maxCorpusCharacters = 100000;
@@ -56,6 +63,16 @@ class AiGenerationService {
       provider == AiProviderType.onDevice
           ? onDeviceTextOutputTokens
           : textOutputTokens;
+
+  int _quizOutputTokens(AiProviderType provider) =>
+      provider == AiProviderType.onDevice
+          ? onDeviceQuizOutputTokens
+          : quizOutputTokens;
+
+  int _checkOutputTokens(AiProviderType provider) =>
+      provider == AiProviderType.onDevice
+          ? onDeviceCheckOutputTokens
+          : checkOutputTokens;
 
   final AiSettingsService settings;
   final AiProviderClientFactory? _clientFactory;
@@ -197,6 +214,214 @@ $corpusJson
       provider: provider,
       sourceAnnotations: List.unmodifiable(sourceAnnotations),
       translationAnnotations: const [],
+    );
+  }
+
+  Future<TranslationQuiz> generateTranslationQuiz({
+    required List<VocabularyEntry> availableVocabulary,
+    required List<String> categories,
+    required int sentenceCount,
+    required TranslationQuizDirection direction,
+    AiCancellationToken? cancellationToken,
+    AiProgressCallback? onProgress,
+  }) async {
+    if (!allowedQuizSentenceCounts.contains(sentenceCount)) {
+      throw const FormatException(
+        'Sentence count must be one of 5, 10, 15, or 20.',
+      );
+    }
+    if (availableVocabulary.isEmpty) {
+      throw const FormatException('At least one vocabulary entry is required.');
+    }
+
+    final corpusDump = [
+      for (final entry in availableVocabulary)
+        {
+          'source': entry.word,
+          'translation': entry.translation,
+          'category': entry.category,
+        },
+    ];
+    final corpusJson = jsonEncode(corpusDump);
+    if (isCorpusTooLarge(
+      entryCount: availableVocabulary.length,
+      corpusJsonCharacters: corpusJson.length,
+    )) {
+      throw const AiCorpusTooLargeException();
+    }
+
+    final token = cancellationToken ?? AiCancellationToken();
+    final provider = await _requireProvider();
+    final sourceLanguage = await settings.getSourceLanguage();
+    final translationLanguage = await settings.getTranslationLanguage();
+
+    token.throwIfCancelled();
+    onProgress?.call(
+      const AiGenerationProgress(AiGenerationStage.generatingQuiz),
+    );
+
+    final data = await _generateJson(
+      provider: provider,
+      maxOutputTokens: _quizOutputTokens(provider),
+      cancellationToken: token,
+      prompt: '''
+Create a translation quiz of exactly $sentenceCount bilingual sentence pairs for language learning.
+
+How to use the vocabulary dump below:
+- Distinguish short reusable items (words or short phrases) from sentence-like example entries.
+- Weave the words/phrases into the quiz sentences as broadly and naturally as possible (best effort; not every item must appear).
+- For sentence-like entries, infer the grammar or syntax patterns they illustrate and invent NEW sentences that reuse those patterns. Never copy any sentence-like source or its translation verbatim.
+- Prefer sentences that are pedagogically useful: natural wording, clear meaning, and grammar that matches the corpus.
+
+Requirements:
+- Source language: $sourceLanguage.
+- Translation language: $translationLanguage.
+- Produce exactly $sentenceCount pairs.
+- Each pair must express the same meaning in both languages.
+- Vary topics and structures across the set.
+- Return exactly: {"sentences":[{"source":"...","translation":"..."}, ...]}
+
+Vocabulary dump (words/phrases and sentence-like examples):
+$corpusJson
+''',
+      validate: (data) {
+        final sentences = data['sentences'];
+        if (sentences is! List || sentences.length != sentenceCount) {
+          throw FormatException(
+            'Expected exactly $sentenceCount sentences.',
+          );
+        }
+        for (final item in sentences) {
+          if (item is! Map) {
+            throw const FormatException('Each sentence must be an object.');
+          }
+          final map = Map<String, dynamic>.from(item);
+          _requiredString(map, 'source');
+          _requiredString(map, 'translation');
+        }
+      },
+    );
+
+    token.throwIfCancelled();
+    final rawSentences = data['sentences'] as List<dynamic>;
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    final items = <TranslationQuizItem>[];
+    for (var index = 0; index < rawSentences.length; index++) {
+      final map = Map<String, dynamic>.from(rawSentences[index] as Map);
+      items.add(
+        TranslationQuizItem.fromBilingualPair(
+          id: '${stamp}_$index',
+          source: map['source'] as String,
+          translation: map['translation'] as String,
+          direction: direction,
+        ),
+      );
+    }
+
+    return TranslationQuiz(
+      items: List.unmodifiable(items),
+      categories: List.unmodifiable(categories),
+      sentenceCount: sentenceCount,
+      direction: direction,
+      provider: provider,
+    );
+  }
+
+  Future<TranslationCheckResult> checkTranslation({
+    required String prompt,
+    required String userAnswer,
+    required String expectedAnswer,
+    required TranslationQuizDirection direction,
+    AiCancellationToken? cancellationToken,
+  }) async {
+    final trimmedAnswer = userAnswer.trim();
+    if (trimmedAnswer.isEmpty) {
+      throw const FormatException('Answer cannot be empty.');
+    }
+
+    final token = cancellationToken ?? AiCancellationToken();
+    final provider = await _requireProvider();
+    final sourceLanguage = await settings.getSourceLanguage();
+    final translationLanguage = await settings.getTranslationLanguage();
+    final promptLanguage =
+        direction == TranslationQuizDirection.translationToSource
+            ? translationLanguage
+            : sourceLanguage;
+    final answerLanguage =
+        direction == TranslationQuizDirection.translationToSource
+            ? sourceLanguage
+            : translationLanguage;
+
+    token.throwIfCancelled();
+    final data = await _generateJson(
+      provider: provider,
+      maxOutputTokens: _checkOutputTokens(provider),
+      cancellationToken: token,
+      prompt: '''
+Grade a learner's translation for a language quiz.
+
+Context:
+- Prompt language ($promptLanguage): ${jsonEncode(prompt)}
+- Expected answer language ($answerLanguage): ${jsonEncode(expectedAnswer)}
+- Learner answer ($answerLanguage): ${jsonEncode(trimmedAnswer)}
+
+Grading rules:
+- Accept correct meaning, including reasonable paraphrases and minor punctuation or capitalization differences.
+- Be strict when meaning drifts, key vocabulary sense is wrong, or grammar changes the intended message.
+- If incorrect, provide a short helpful feedback note, a corrected answer in $answerLanguage, and a learner-friendly pronunciation transcription of that corrected answer (latin characters for most languages; pinyin for Mandarin Chinese; romaji for Japanese when appropriate).
+- If correct, feedback may briefly confirm what was good; correctedAnswer and transcription may be empty strings. Optionally still fill transcription for the accepted answer.
+
+Return exactly: {"correct":true|false,"feedback":"...","correctedAnswer":"...","transcription":"..."}
+''',
+      validate: (data) {
+        final correct = data['correct'];
+        if (correct is! bool) {
+          throw const FormatException('Missing correct boolean.');
+        }
+        _requiredString(data, 'feedback');
+        final corrected = data['correctedAnswer'];
+        if (corrected != null && corrected is! String) {
+          throw const FormatException('correctedAnswer must be a string.');
+        }
+        final transcription = data['transcription'];
+        if (transcription != null && transcription is! String) {
+          throw const FormatException('transcription must be a string.');
+        }
+        if (correct == false) {
+          final value = corrected is String ? corrected.trim() : '';
+          if (value.isEmpty) {
+            throw const FormatException(
+              'correctedAnswer is required when incorrect.',
+            );
+          }
+          final transcriptionValue =
+              transcription is String ? transcription.trim() : '';
+          if (transcriptionValue.isEmpty) {
+            throw const FormatException(
+              'transcription is required when incorrect.',
+            );
+          }
+        }
+      },
+    );
+
+    final isCorrect = data['correct'] as bool;
+    final correctedRaw = data['correctedAnswer'];
+    final corrected =
+        correctedRaw is String && correctedRaw.trim().isNotEmpty
+            ? correctedRaw.trim()
+            : null;
+    final transcriptionRaw = data['transcription'];
+    final transcription =
+        transcriptionRaw is String && transcriptionRaw.trim().isNotEmpty
+            ? transcriptionRaw.trim()
+            : null;
+
+    return TranslationCheckResult(
+      isCorrect: isCorrect,
+      feedback: (data['feedback'] as String).trim(),
+      correctedAnswer: isCorrect ? corrected : (corrected ?? expectedAnswer),
+      transcription: transcription,
     );
   }
 

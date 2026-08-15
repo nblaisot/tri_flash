@@ -19,6 +19,7 @@ class WordContentSection extends StatelessWidget {
     required this.onToggleTranslation,
     required this.onSpeakWord,
     required this.onGenerateSentence,
+    required this.onTryTranslation,
     required this.wordsCountKey,
     required this.wordTileKey,
     required this.ttsButtonKey,
@@ -38,6 +39,7 @@ class WordContentSection extends StatelessWidget {
   final VoidCallback onToggleTranslation;
   final VoidCallback onSpeakWord;
   final VoidCallback onGenerateSentence;
+  final VoidCallback onTryTranslation;
 
   final GlobalKey wordsCountKey;
   final GlobalKey wordTileKey;
@@ -94,10 +96,20 @@ class WordContentSection extends StatelessWidget {
           word: currentWord['translation'],
           isVisible: showTranslation,
           onToggle: onToggleTranslation,
-          trailing: IconButton(
-            tooltip: context.l10n.text('generateSentence'),
-            icon: const Icon(Icons.auto_awesome),
-            onPressed: onGenerateSentence,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: context.l10n.text('tryTranslation'),
+                icon: const Icon(Icons.edit_note),
+                onPressed: onTryTranslation,
+              ),
+              IconButton(
+                tooltip: context.l10n.text('generateSentence'),
+                icon: const Icon(Icons.auto_awesome),
+                onPressed: onGenerateSentence,
+              ),
+            ],
           ),
         ),
       ],

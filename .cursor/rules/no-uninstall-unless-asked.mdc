@@ -1,0 +1,27 @@
+---
+description: HARD BAN — never uninstall Android apps; never use flutter install; only adb install -r. Enforced by beforeShellExecution hook.
+alwaysApply: true
+---
+
+# Android: NEVER uninstall — only in-place update
+
+This is a hard ban. Violating it destroys user data.
+
+Mechanical enforcement: Cursor `beforeShellExecution` hooks deny `flutter install`, `adb uninstall`, and `pm uninstall` (`failClosed: true`). Do not try to bypass them.
+
+## Forbidden (unless the user explicitly says uninstall/delete/remove the app in THIS message)
+
+- `adb uninstall`
+- `pm uninstall` / `cmd package uninstall`
+- **`flutter install`** — it uninstalls the old app first. NEVER use it.
+- Any script or flow that removes the package before installing
+
+## Required install / update path
+
+1. `flutter build apk` or `flutter build apk --debug`
+2. `adb -s <serial> install -r path/to.apk`
+3. Signature mismatch → STOP and ask. Never uninstall to “fix” it.
+
+## Scope
+
+All projects, all devices. “Install” / “update” never means uninstall.

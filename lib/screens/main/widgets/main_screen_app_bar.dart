@@ -52,6 +52,14 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                     ),
                   ),
                   PopupMenuItem<String>(
+                    value: 'translation_quiz',
+                    child: ListTile(
+                      leading: const Icon(Icons.quiz_outlined),
+                      title: Text(context.l10n.text('translationQuiz')),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem<String>(
                     value: 'text_history',
                     child: ListTile(
                       leading: const Icon(Icons.history),

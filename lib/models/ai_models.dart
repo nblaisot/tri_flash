@@ -195,3 +195,82 @@ class GeneratedText {
 
   String encode() => jsonEncode(toJson());
 }
+
+enum TranslationQuizDirection {
+  /// Show translation language; user types source language (default).
+  translationToSource,
+
+  /// Show source language; user types translation language.
+  sourceToTranslation,
+}
+
+class TranslationQuizItem {
+  const TranslationQuizItem({
+    required this.id,
+    required this.prompt,
+    required this.expectedAnswer,
+    required this.source,
+    required this.translation,
+  });
+
+  final String id;
+  final String prompt;
+  final String expectedAnswer;
+  final String source;
+  final String translation;
+
+  static TranslationQuizItem fromBilingualPair({
+    required String id,
+    required String source,
+    required String translation,
+    required TranslationQuizDirection direction,
+  }) {
+    final prompt =
+        direction == TranslationQuizDirection.translationToSource
+            ? translation
+            : source;
+    final expectedAnswer =
+        direction == TranslationQuizDirection.translationToSource
+            ? source
+            : translation;
+    return TranslationQuizItem(
+      id: id,
+      prompt: prompt,
+      expectedAnswer: expectedAnswer,
+      source: source,
+      translation: translation,
+    );
+  }
+}
+
+class TranslationQuiz {
+  const TranslationQuiz({
+    required this.items,
+    required this.categories,
+    required this.sentenceCount,
+    required this.direction,
+    required this.provider,
+  });
+
+  final List<TranslationQuizItem> items;
+  final List<String> categories;
+  final int sentenceCount;
+  final TranslationQuizDirection direction;
+  final AiProviderType provider;
+}
+
+class TranslationCheckResult {
+  const TranslationCheckResult({
+    required this.isCorrect,
+    required this.feedback,
+    this.correctedAnswer,
+    this.transcription,
+  });
+
+  final bool isCorrect;
+  final String feedback;
+  final String? correctedAnswer;
+
+  /// Pronunciation of [correctedAnswer] (latin / pinyin / etc.).
+  final String? transcription;
+}
