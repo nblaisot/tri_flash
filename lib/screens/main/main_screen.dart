@@ -156,7 +156,14 @@ class _MainScreenState extends State<MainScreen> {
               onToggleTranslation: _controller.toggleTranslationVisibility,
               onSpeakWord: () => _controller.speakCurrentWord(context),
               onGenerateSentence: _generateSentence,
-              onTryTranslation: _tryTranslation,
+              onTryWord:
+                  () => _tryCardTranslation(
+                    TranslationQuizDirection.translationToSource,
+                  ),
+              onTryTranslation:
+                  () => _tryCardTranslation(
+                    TranslationQuizDirection.sourceToTranslation,
+                  ),
               wordsCountKey: _wordsCountKey,
               wordTileKey: _wordTileKey,
               ttsButtonKey: _ttsButtonKey,
@@ -238,20 +245,31 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  Future<void> _tryTranslation() async {
+  Future<void> _tryCardTranslation(TranslationQuizDirection direction) async {
     final word = _controller.currentWord;
     if (word == null) return;
-    final prompt = word['word']?.toString().trim() ?? '';
-    final expected = word['translation']?.toString().trim() ?? '';
-    if (prompt.isEmpty || expected.isEmpty) return;
+    final source = word['word']?.toString().trim() ?? '';
+    final translation = word['translation']?.toString().trim() ?? '';
+    if (source.isEmpty || translation.isEmpty) return;
     if (!await AiSetupFlow.ensureReady(context)) return;
     if (!mounted) return;
+
+    final prompt =
+        direction == TranslationQuizDirection.translationToSource
+            ? translation
+            : source;
+    final expected =
+        direction == TranslationQuizDirection.translationToSource
+            ? source
+            : translation;
+
     await showDialog<void>(
       context: context,
       builder:
           (_) => TryTranslationDialog(
             prompt: prompt,
             expectedAnswer: expected,
+            direction: direction,
             aiGeneration: _aiGeneration,
           ),
     );

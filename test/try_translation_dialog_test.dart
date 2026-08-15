@@ -59,6 +59,7 @@ void main() {
           body: TryTranslationDialog(
             prompt: 'chat',
             expectedAnswer: 'cat',
+            direction: TranslationQuizDirection.sourceToTranslation,
             aiGeneration: service,
           ),
         ),
@@ -76,7 +77,7 @@ void main() {
 
     expect(find.text('Practice translation'), findsOneWidget);
     expect(find.text('chat'), findsOneWidget);
-    expect(find.text('Translate this word'), findsOneWidget);
+    expect(find.text('Translate this'), findsOneWidget);
   });
 
   testWidgets('shows correct feedback after a successful check', (tester) async {

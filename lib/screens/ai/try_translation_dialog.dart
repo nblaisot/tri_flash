@@ -7,12 +7,14 @@ class TryTranslationDialog extends StatefulWidget {
   const TryTranslationDialog({
     required this.prompt,
     required this.expectedAnswer,
+    required this.direction,
     this.aiGeneration,
     super.key,
   });
 
   final String prompt;
   final String expectedAnswer;
+  final TranslationQuizDirection direction;
   final AiGenerationService? aiGeneration;
 
   @override
@@ -48,7 +50,7 @@ class _TryTranslationDialogState extends State<TryTranslationDialog> {
         prompt: widget.prompt,
         userAnswer: answer,
         expectedAnswer: widget.expectedAnswer,
-        direction: TranslationQuizDirection.sourceToTranslation,
+        direction: widget.direction,
       );
       if (!mounted) return;
       setState(() => _result = result);
