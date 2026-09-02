@@ -7,6 +7,9 @@ import 'package:tri_flash/screens/ai/ai_setup_flow.dart';
 import 'package:tri_flash/screens/ai/generated_text_history_screen.dart';
 import 'package:tri_flash/screens/ai/generated_text_viewer_screen.dart';
 import 'package:tri_flash/screens/ai/text_generation_sheet.dart';
+import 'package:tri_flash/screens/ai/translation_quiz_session_screen.dart';
+import 'package:tri_flash/screens/ai/translation_quiz_sheet.dart';
+import 'package:tri_flash/screens/ai/try_translation_dialog.dart';
 
 import 'package:tri_flash/screens/edit_words/edit_words_screen.dart';
 import 'package:tri_flash/screens/load_csv/load_csv_screen.dart';
@@ -97,8 +100,8 @@ class _MainScreenState extends State<MainScreen> {
               ),
               body: _buildBody(),
               floatingActionButton: FloatingActionButton(
-                tooltip: context.l10n.text('generateText'),
-                onPressed: _generateText,
+                tooltip: context.l10n.text('ai'),
+                onPressed: _showAiActions,
                 child: const Icon(Icons.auto_awesome),
               ),
             ),
@@ -153,6 +156,14 @@ class _MainScreenState extends State<MainScreen> {
               onToggleTranslation: _controller.toggleTranslationVisibility,
               onSpeakWord: () => _controller.speakCurrentWord(context),
               onGenerateSentence: _generateSentence,
+              onTryWord:
+                  () => _tryCardTranslation(
+                    TranslationQuizDirection.translationToSource,
+                  ),
+              onTryTranslation:
+                  () => _tryCardTranslation(
+                    TranslationQuizDirection.sourceToTranslation,
+                  ),
               wordsCountKey: _wordsCountKey,
               wordTileKey: _wordTileKey,
               ttsButtonKey: _ttsButtonKey,
@@ -222,6 +233,9 @@ class _MainScreenState extends State<MainScreen> {
       case 'generate_text':
         await _generateText();
         break;
+      case 'translation_quiz':
+        await _startTranslationQuiz();
+        break;
       case 'text_history':
         await Navigator.push(
           context,
@@ -229,6 +243,36 @@ class _MainScreenState extends State<MainScreen> {
         );
         break;
     }
+  }
+
+  Future<void> _tryCardTranslation(TranslationQuizDirection direction) async {
+    final word = _controller.currentWord;
+    if (word == null) return;
+    final source = word['word']?.toString().trim() ?? '';
+    final translation = word['translation']?.toString().trim() ?? '';
+    if (source.isEmpty || translation.isEmpty) return;
+    if (!await AiSetupFlow.ensureReady(context)) return;
+    if (!mounted) return;
+
+    final prompt =
+        direction == TranslationQuizDirection.translationToSource
+            ? translation
+            : source;
+    final expected =
+        direction == TranslationQuizDirection.translationToSource
+            ? source
+            : translation;
+
+    await showDialog<void>(
+      context: context,
+      builder:
+          (_) => TryTranslationDialog(
+            prompt: prompt,
+            expectedAnswer: expected,
+            direction: direction,
+            aiGeneration: _aiGeneration,
+          ),
+    );
   }
 
   Future<void> _generateSentence() async {
@@ -308,6 +352,108 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       _showAiError(error);
+    }
+  }
+
+  Future<void> _showAiActions() async {
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder:
+          (sheetContext) => SafeArea(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: Text(sheetContext.l10n.text('aiActionsTitle')),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.auto_stories),
+                  title: Text(sheetContext.l10n.text('generateText')),
+                  onTap: () => Navigator.pop(sheetContext, 'generate_text'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.quiz_outlined),
+                  title: Text(sheetContext.l10n.text('translationQuiz')),
+                  onTap: () => Navigator.pop(sheetContext, 'translation_quiz'),
+                ),
+              ],
+            ),
+          ),
+    );
+    if (!mounted || action == null) return;
+    if (action == 'generate_text') {
+      await _generateText();
+    } else if (action == 'translation_quiz') {
+      await _startTranslationQuiz();
+    }
+  }
+
+  Future<void> _startTranslationQuiz() async {
+    if (!await AiSetupFlow.ensureReady(context)) return;
+    if (!mounted) return;
+    final options = await showModalBottomSheet<TranslationQuizOptions>(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (_) => TranslationQuizSheet(
+            categories: _controller.categories,
+            initialSelection: _controller.selectedCategories,
+          ),
+    );
+    if (options == null || !mounted) return;
+    final maps = await _controller.loadActiveWordsForCategories(
+      options.categories,
+    );
+    if (!mounted) return;
+    final vocabulary = maps.map(VocabularyEntry.fromMap).toList();
+    if (vocabulary.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.text('noWords'))));
+      return;
+    }
+    final cancellationToken = AiCancellationToken();
+    _activeGeneration = cancellationToken;
+    final progress = ValueNotifier<AiGenerationProgress>(
+      const AiGenerationProgress(AiGenerationStage.generatingQuiz),
+    );
+    _showGenerationProgress(progress, cancellationToken);
+    try {
+      final quiz = await _aiGeneration.generateTranslationQuiz(
+        availableVocabulary: vocabulary,
+        categories: options.categories,
+        sentenceCount: options.sentenceCount,
+        direction: options.direction,
+        cancellationToken: cancellationToken,
+        onProgress: (value) => progress.value = value,
+      );
+      cancellationToken.throwIfCancelled();
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      await Navigator.of(context).push(
+        MaterialPageRoute(
+          builder: (_) => TranslationQuizSessionScreen(quiz: quiz),
+        ),
+      );
+    } on AiGenerationCancelled {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.text('generationCancelled'))),
+      );
+    } on AiCorpusTooLargeException {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showAiError(context.l10n.text('corpusTooLarge'));
+    } catch (error) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      _showAiError(error);
+    } finally {
+      if (identical(_activeGeneration, cancellationToken)) {
+        _activeGeneration = null;
+      }
+      progress.dispose();
     }
   }
 
@@ -427,6 +573,7 @@ class _MainScreenState extends State<MainScreen> {
     };
     final key = switch (progress.stage) {
       AiGenerationStage.generatingText => 'generatingBilingualText',
+      AiGenerationStage.generatingQuiz => 'generatingTranslationQuiz',
       AiGenerationStage.annotatingSource => 'annotatingSource',
       AiGenerationStage.saving => 'savingGeneratedText',
     };
