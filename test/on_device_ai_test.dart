@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:on_device_ai/on_device_ai.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_flash/models/ai_models.dart';
+import 'package:tri_flash/screens/ai/ai_setup_flow.dart';
 import 'package:tri_flash/services/ai/ai_provider_client.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
 import 'package:tri_flash/services/ai/on_device_ai_provider_client.dart';
@@ -23,6 +24,7 @@ class _FakeBridge extends OnDeviceAiBridge {
     required String prompt,
     String? systemInstruction,
     required int maxOutputTokens,
+    OnDeviceAiResponseSchema? responseSchema,
   }) async {
     generateCalls++;
     return response;
@@ -42,6 +44,7 @@ class _CompletingBridge extends _FakeBridge {
     required String prompt,
     String? systemInstruction,
     required int maxOutputTokens,
+    OnDeviceAiResponseSchema? responseSchema,
   }) async {
     generateCalls++;
     await Future<void>.delayed(const Duration(milliseconds: 50));
@@ -49,23 +52,29 @@ class _CompletingBridge extends _FakeBridge {
   }
 }
 
+class _AvailabilityBridge extends OnDeviceAiBridge {
+  _AvailabilityBridge(this.availability);
+
+  final OnDeviceAiAvailability availability;
+
+  @override
+  Future<OnDeviceAiAvailability> getAvailability() async => availability;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  test('factory blocks on-device client while the feature flag is off', () async {
-    SharedPreferences.setMockInitialValues({});
-    final factory = AiProviderClientFactory(AiSettingsService());
-    await expectLater(
-      factory.create(AiProviderType.onDevice),
-      throwsA(
-        isA<AiProviderException>().having(
-          (error) => error.message,
-          'message',
-          'On-device AI is currently disabled.',
-        ),
-      ),
-    );
-  });
+  test(
+    'factory exposes on-device client when the feature is enabled',
+    () async {
+      SharedPreferences.setMockInitialValues({});
+      final factory = AiProviderClientFactory(AiSettingsService());
+      expect(
+        await factory.create(AiProviderType.onDevice),
+        isA<OnDeviceAiProviderClient>(),
+      );
+    },
+  );
 
   test('on-device client forwards prompt and system instruction', () async {
     final bridge = _FakeBridge(
@@ -126,13 +135,22 @@ void main() {
       'status': 'downloadRequired',
       'reason': 'modelDownloadRequired',
       'message': 'Download required',
-      'maxInputTokens': 3500,
-      'maxOutputTokens': 4096,
+      'isEligible': true,
+      'totalTokenLimit': 4096,
+      'providerName': 'Gemini Nano',
+      'modelName': 'nano-v4',
+      'supportsStructuredOutput': true,
     });
 
     expect(availability.status, OnDeviceAiStatus.downloadRequired);
-    expect(availability.reason, OnDeviceAiUnavailableReason.modelDownloadRequired);
-    expect(availability.maxOutputTokens, 4096);
+    expect(
+      availability.reason,
+      OnDeviceAiUnavailableReason.modelDownloadRequired,
+    );
+    expect(availability.isEligible, isTrue);
+    expect(availability.totalTokenLimit, 4096);
+    expect(availability.modelName, 'nano-v4');
+    expect(availability.supportsStructuredOutput, isTrue);
   });
 
   test('missing plugin channel reports unsupported availability', () async {
@@ -145,4 +163,73 @@ void main() {
     final availability = await OnDeviceAiBridge().getAvailability();
     expect(availability.status, OnDeviceAiStatus.unsupported);
   });
+
+  test('eligible devices select local AI by default', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = AiSettingsService(
+      onDeviceBridge: _AvailabilityBridge(
+        const OnDeviceAiAvailability(
+          status: OnDeviceAiStatus.ready,
+          isEligible: true,
+        ),
+      ),
+    );
+
+    expect(
+      await AiSetupFlow.resolveStoredOrLocalDefault(settings),
+      AiProviderType.onDevice,
+    );
+    expect(await settings.getProvider(), AiProviderType.onDevice);
+  });
+
+  test('existing cloud provider is preserved on eligible devices', () async {
+    SharedPreferences.setMockInitialValues({'ai_provider': 'mistral'});
+    final settings = AiSettingsService(
+      onDeviceBridge: _AvailabilityBridge(
+        const OnDeviceAiAvailability(
+          status: OnDeviceAiStatus.ready,
+          isEligible: true,
+        ),
+      ),
+    );
+
+    expect(
+      await AiSetupFlow.resolveStoredOrLocalDefault(settings),
+      AiProviderType.mistral,
+    );
+  });
+
+  test('ineligible devices retain the cloud provider chooser path', () async {
+    SharedPreferences.setMockInitialValues({});
+    final settings = AiSettingsService(
+      onDeviceBridge: _AvailabilityBridge(
+        const OnDeviceAiAvailability(
+          status: OnDeviceAiStatus.unsupported,
+          isEligible: false,
+          reason: OnDeviceAiUnavailableReason.deviceNotEligible,
+        ),
+      ),
+    );
+
+    expect(await AiSetupFlow.resolveStoredOrLocalDefault(settings), isNull);
+    expect(await settings.getProvider(), isNull);
+  });
+
+  test(
+    'a stored local provider is not used after confirmed ineligibility',
+    () async {
+      SharedPreferences.setMockInitialValues({'ai_provider': 'onDevice'});
+      final settings = AiSettingsService(
+        onDeviceBridge: _AvailabilityBridge(
+          const OnDeviceAiAvailability(
+            status: OnDeviceAiStatus.unsupported,
+            isEligible: false,
+            reason: OnDeviceAiUnavailableReason.deviceNotEligible,
+          ),
+        ),
+      );
+
+      expect(await AiSetupFlow.resolveStoredOrLocalDefault(settings), isNull);
+    },
+  );
 }

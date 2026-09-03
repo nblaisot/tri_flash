@@ -8,6 +8,14 @@ import 'package:tri_flash/services/ai/codex_auth_service.dart';
 import 'package:tri_flash/services/ai/ai_feature_flags.dart';
 import 'package:tri_flash/services/ai/on_device_ai_provider_client.dart';
 
+enum AiResponseSchema {
+  bilingualSentence,
+  passageStart,
+  passageSegment,
+  quizBatch,
+  translationCheck,
+}
+
 class AiProviderException implements Exception {
   const AiProviderException(this.message, {this.isTransient = false});
   final String message;
@@ -57,6 +65,7 @@ abstract class AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   });
 }
 
@@ -72,6 +81,7 @@ class OpenAiProviderClient implements AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     final removeListener = cancellationToken?.listen(_client.close);
@@ -127,6 +137,7 @@ class MistralProviderClient implements AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     final removeListener = cancellationToken?.listen(_client.close);
@@ -199,6 +210,7 @@ class CodexProviderClient implements AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     final removeListener = cancellationToken?.listen(_client.close);

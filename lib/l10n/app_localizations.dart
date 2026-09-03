@@ -87,7 +87,8 @@ class AppLocalizations {
       'openaiProvider': 'OpenAI API key',
       'mistralProvider': 'Mistral API key',
       'onDeviceProvider': 'On-device AI (private)',
-      'onDeviceProviderHelp': 'Runs on your phone. Vocabulary stays on the device.',
+      'onDeviceProviderHelp':
+          'Runs offline on your phone. Vocabulary and answers stay on the device.',
       'onDeviceSetupAction': 'Set up',
       'onDeviceDownloadTitle': 'Download on-device model',
       'onDeviceDownloadBody':
@@ -98,6 +99,12 @@ class AppLocalizations {
       'onDeviceTemporarilyUnavailable':
           'On-device AI is temporarily unavailable. Try again later.',
       'onDeviceReady': 'On-device AI is ready.',
+      'onDeviceAppleSetup':
+          'Enable Apple Intelligence in device Settings to use local AI.',
+      'onDeviceSystemUpdate':
+          'Update your device intelligence services to use local AI.',
+      'onDeviceModelPreparing':
+          'The system is preparing the local model. Try again shortly.',
       'onDeviceDownloadRequired': 'Download the on-device model to continue.',
       'apiKey': 'API key',
       'save': 'Save',
@@ -114,7 +121,7 @@ class AppLocalizations {
           'This is normal and does not mean your internet connection is down.',
       'privacyTitle': 'AI privacy notice',
       'privacyBody':
-          'Selected vocabulary and generation instructions will be sent to the AI provider you choose. ChatGPT/Codex subscription access is experimental; OpenAI and Mistral API usage is billed separately by those providers. If you choose on-device AI, prompts stay on your phone and are not sent to a cloud provider.',
+          'Selected vocabulary, answers, and generation instructions will be sent to the cloud AI provider you choose. ChatGPT/Codex subscription access is experimental; OpenAI and Mistral API usage is billed separately by those providers.',
       'continueAction': 'Continue',
       'aiError': 'AI request failed',
       'providerError':
@@ -227,8 +234,13 @@ class AppLocalizations {
       'onDeviceTemporarilyUnavailable':
           'L’IA locale est temporairement indisponible. Réessayez plus tard.',
       'onDeviceReady': 'L’IA locale est prête.',
-      'onDeviceDownloadRequired':
-          'Téléchargez le modèle local pour continuer.',
+      'onDeviceAppleSetup':
+          'Activez Apple Intelligence dans les réglages de l’appareil pour utiliser l’IA locale.',
+      'onDeviceSystemUpdate':
+          'Mettez à jour les services d’intelligence de l’appareil pour utiliser l’IA locale.',
+      'onDeviceModelPreparing':
+          'Le système prépare le modèle local. Réessayez dans quelques instants.',
+      'onDeviceDownloadRequired': 'Téléchargez le modèle local pour continuer.',
       'apiKey': 'Clé API',
       'save': 'Enregistrer',
       'configured': 'Configuré',
@@ -244,7 +256,7 @@ class AppLocalizations {
           'C’est normal : l’application attend que vous vous connectiez ci-dessus, pas que le réseau fonctionne.',
       'privacyTitle': 'Confidentialité et IA',
       'privacyBody':
-          'Le vocabulaire sélectionné et les instructions de génération seront envoyés au fournisseur d’IA choisi. L’accès par abonnement ChatGPT/Codex est expérimental ; les API OpenAI et Mistral sont facturées séparément par ces fournisseurs. Si vous choisissez l’IA locale, les prompts restent sur votre téléphone et ne sont pas envoyés à un fournisseur cloud.',
+          'Le vocabulaire sélectionné, les réponses et les instructions de génération seront envoyés au fournisseur d’IA cloud choisi. L’accès par abonnement ChatGPT/Codex est expérimental ; les API OpenAI et Mistral sont facturées séparément par ces fournisseurs.',
       'continueAction': 'Continuer',
       'aiError': 'Échec de la requête IA',
       'providerError':

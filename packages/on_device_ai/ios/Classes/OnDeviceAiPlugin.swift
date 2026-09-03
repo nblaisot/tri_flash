@@ -5,16 +5,32 @@ import UIKit
 import FoundationModels
 #endif
 
-public class OnDeviceAiPlugin: NSObject, FlutterPlugin {
+public class OnDeviceAiPlugin: NSObject, FlutterPlugin, FlutterStreamHandler {
   private var generateTask: Task<Void, Never>?
 
   public static func register(with registrar: FlutterPluginRegistrar) {
-    let channel = FlutterMethodChannel(
+    let methodChannel = FlutterMethodChannel(
       name: "com.triflash/on_device_ai",
       binaryMessenger: registrar.messenger()
     )
+    let downloadChannel = FlutterEventChannel(
+      name: "com.triflash/on_device_ai/download",
+      binaryMessenger: registrar.messenger()
+    )
     let instance = OnDeviceAiPlugin()
-    registrar.addMethodCallDelegate(instance, channel: channel)
+    registrar.addMethodCallDelegate(instance, channel: methodChannel)
+    downloadChannel.setStreamHandler(instance)
+  }
+
+  public func onListen(
+    withArguments arguments: Any?,
+    eventSink events: @escaping FlutterEventSink
+  ) -> FlutterError? {
+    nil
+  }
+
+  public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    nil
   }
 
   public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
@@ -24,48 +40,62 @@ public class OnDeviceAiPlugin: NSObject, FlutterPlugin {
     case "getLimits":
       result(Self.limitsMap())
     case "downloadModel":
+      // Apple Intelligence owns model downloads at the OS level.
       result(nil)
+    case "warmup":
+      Self.warmup()
+      result(nil)
+    case "supportsLanguages":
+      let args = call.arguments as? [String: Any]
+      let languageCodes = args?["languageCodes"] as? [String] ?? []
+      result(["supported": Self.supportsLanguages(languageCodes)])
+    case "countTokens":
+      guard let args = call.arguments as? [String: Any],
+            let prompt = args["prompt"] as? String,
+            !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else {
+        result(FlutterError(code: "invalid_args", message: "prompt is required", details: nil))
+        return
+      }
+      let instruction = args["systemInstruction"] as? String
+      let schema = args["responseSchema"] as? String
+      generateTask?.cancel()
+      generateTask = Task {
+        do {
+          let count = try await Self.countTokens(
+            prompt: prompt,
+            systemInstruction: instruction,
+            responseSchema: schema
+          )
+          result(["count": count])
+        } catch {
+          result(Self.flutterError(error))
+        }
+      }
     case "generate":
       guard let args = call.arguments as? [String: Any],
             let prompt = args["prompt"] as? String,
             !prompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       else {
-        result(
-          FlutterError(code: "invalid_args", message: "prompt is required", details: nil)
-        )
+        result(FlutterError(code: "invalid_args", message: "prompt is required", details: nil))
         return
       }
-      let systemInstruction = args["systemInstruction"] as? String
+      let instruction = args["systemInstruction"] as? String
       let maxOutputTokens = args["maxOutputTokens"] as? Int ?? 4096
+      let schema = args["responseSchema"] as? String
       generateTask?.cancel()
       generateTask = Task {
         do {
           let text = try await Self.generate(
             prompt: prompt,
-            systemInstruction: systemInstruction,
-            maxOutputTokens: maxOutputTokens
+            systemInstruction: instruction,
+            maxOutputTokens: maxOutputTokens,
+            responseSchema: schema
           )
-          if Task.isCancelled {
-            result(
-              FlutterError(code: "cancelled", message: "Generation cancelled.", details: nil)
-            )
-            return
-          }
+          try Task.checkCancellation()
           result(["text": text])
         } catch {
-          if Task.isCancelled {
-            result(
-              FlutterError(code: "cancelled", message: "Generation cancelled.", details: nil)
-            )
-          } else {
-            result(
-              FlutterError(
-                code: "generate_failed",
-                message: error.localizedDescription,
-                details: nil
-              )
-            )
-          }
+          result(Self.flutterError(error))
         }
       }
     case "cancel":
@@ -80,7 +110,50 @@ public class OnDeviceAiPlugin: NSObject, FlutterPlugin {
   private static func availabilityMap() -> [String: Any] {
 #if canImport(FoundationModels)
     if #available(iOS 26.0, *) {
-      return FoundationModelsAvailability.currentMap()
+      let model = SystemLanguageModel.default
+      let common: [String: Any] = [
+        "providerName": "Apple Intelligence",
+        "modelName": "System Language Model",
+        "totalTokenLimit": model.contextSize,
+        "supportsStructuredOutput": true,
+        "supportsSystemInstructions": true,
+        "supportsTokenCounting": tokenCountingAvailable,
+        "supportsWarmup": true,
+      ]
+      switch model.availability {
+      case .available:
+        return common.merging([
+          "status": "ready",
+          "isEligible": true,
+          "reason": "unknown",
+        ]) { _, new in new }
+      case .unavailable(.deviceNotEligible):
+        return unsupportedMap(
+          reason: "deviceNotEligible",
+          message: "This device does not support Apple Intelligence."
+        )
+      case .unavailable(.appleIntelligenceNotEnabled):
+        return common.merging([
+          "status": "setupRequired",
+          "isEligible": true,
+          "reason": "appleIntelligenceNotEnabled",
+          "message": "Enable Apple Intelligence in Settings to use local AI.",
+        ]) { _, new in new }
+      case .unavailable(.modelNotReady):
+        return common.merging([
+          "status": "temporarilyUnavailable",
+          "isEligible": true,
+          "reason": "modelNotReady",
+          "message": "Apple Intelligence is preparing its on-device model.",
+        ]) { _, new in new }
+      @unknown default:
+        return common.merging([
+          "status": "temporarilyUnavailable",
+          "isEligible": true,
+          "reason": "featureUnavailable",
+          "message": "Apple Intelligence is temporarily unavailable.",
+        ]) { _, new in new }
+      }
     }
 #endif
     return unsupportedMap(reason: "osVersionUnsupported", message: "iOS 26+ is required.")
@@ -89,28 +162,140 @@ public class OnDeviceAiPlugin: NSObject, FlutterPlugin {
   private static func limitsMap() -> [String: Int] {
 #if canImport(FoundationModels)
     if #available(iOS 26.0, *) {
-      return FoundationModelsAvailability.currentLimits()
+      return ["totalTokenLimit": SystemLanguageModel.default.contextSize]
     }
 #endif
-    return ["maxInputTokens": 3500, "maxOutputTokens": 4096]
+    return ["totalTokenLimit": 4096]
+  }
+
+  private static var tokenCountingAvailable: Bool {
+    if #available(iOS 26.4, *) { return true }
+    return false
+  }
+
+  private static func warmup() {
+#if canImport(FoundationModels)
+    if #available(iOS 26.0, *) {
+      LanguageModelSession(
+        model: SystemLanguageModel.default,
+        instructions: "Be concise and follow the requested output structure exactly."
+      ).prewarm()
+    }
+#endif
+  }
+
+  private static func supportsLanguages(_ languageCodes: [String]) -> Bool {
+#if canImport(FoundationModels)
+    if #available(iOS 26.0, *) {
+      let model = SystemLanguageModel.default
+      return languageCodes.allSatisfy { model.supportsLocale(Locale(identifier: $0)) }
+    }
+#endif
+    return false
+  }
+
+  private static func countTokens(
+    prompt: String,
+    systemInstruction: String?,
+    responseSchema: String?
+  ) async throws -> Int {
+#if canImport(FoundationModels)
+    if #available(iOS 26.4, *) {
+      let model = SystemLanguageModel.default
+      var count = try await model.tokenCount(for: prompt)
+      if let instruction = systemInstruction, !instruction.isEmpty {
+        count += try await model.tokenCount(for: instruction)
+      }
+      if let schema = responseSchema {
+        count += try await schemaTokenCount(model: model, schema: schema)
+      }
+      return count
+    }
+#endif
+    throw NSError(
+      domain: "OnDeviceAi",
+      code: 4,
+      userInfo: [NSLocalizedDescriptionKey: "Token counting requires iOS 26.4 or later."]
+    )
   }
 
   private static func generate(
     prompt: String,
     systemInstruction: String?,
-    maxOutputTokens: Int
+    maxOutputTokens: Int,
+    responseSchema: String?
   ) async throws -> String {
 #if canImport(FoundationModels)
     if #available(iOS 26.0, *) {
-      return try await FoundationModelsGenerator.generate(
-        prompt: prompt,
-        systemInstruction: systemInstruction,
-        maxOutputTokens: maxOutputTokens
+      let model = SystemLanguageModel.default
+      guard case .available = model.availability else {
+        throw NSError(
+          domain: "OnDeviceAiUnavailable",
+          code: 2,
+          userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence is not ready."]
+        )
+      }
+      let session = LanguageModelSession(
+        model: model,
+        instructions: systemInstruction ?? "Follow the requested output structure exactly."
       )
+      let options = GenerationOptions(
+        sampling: .random(probabilityThreshold: 0.9),
+        temperature: 0.3,
+        maximumResponseTokens: max(1, min(maxOutputTokens, 4096))
+      )
+      let text: String
+      switch responseSchema {
+      case "bilingualSentence":
+        let output = try await session.respond(
+          to: prompt,
+          generating: BilingualSentenceOutput.self,
+          options: options
+        ).content
+        text = try jsonString(output.dictionary)
+      case "passageStart":
+        let output = try await session.respond(
+          to: prompt,
+          generating: PassageStartOutput.self,
+          options: options
+        ).content
+        text = try jsonString(output.dictionary)
+      case "passageSegment":
+        let output = try await session.respond(
+          to: prompt,
+          generating: PassageSegmentOutput.self,
+          options: options
+        ).content
+        text = try jsonString(output.dictionary)
+      case "quizBatch":
+        let output = try await session.respond(
+          to: prompt,
+          generating: QuizBatchOutput.self,
+          options: options
+        ).content
+        text = try jsonString(output.dictionary)
+      case "translationCheck":
+        let output = try await session.respond(
+          to: prompt,
+          generating: TranslationCheckOutput.self,
+          options: options
+        ).content
+        text = try jsonString(output.dictionary)
+      default:
+        text = try await session.respond(to: prompt, options: options).content
+      }
+      if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        throw NSError(
+          domain: "OnDeviceAi",
+          code: 3,
+          userInfo: [NSLocalizedDescriptionKey: "Apple Intelligence returned an empty response."]
+        )
+      }
+      return text
     }
 #endif
     throw NSError(
-      domain: "OnDeviceAi",
+      domain: "OnDeviceAiUnavailable",
       code: 1,
       userInfo: [NSLocalizedDescriptionKey: "On-device AI is not available on this device."]
     )
@@ -119,101 +304,172 @@ public class OnDeviceAiPlugin: NSObject, FlutterPlugin {
   private static func unsupportedMap(reason: String, message: String) -> [String: Any] {
     [
       "status": "unsupported",
+      "isEligible": false,
       "reason": reason,
       "message": message,
-      "maxInputTokens": 3500,
-      "maxOutputTokens": 4096,
+      "providerName": "Apple Intelligence",
+      "modelName": "System Language Model",
+      "totalTokenLimit": 4096,
+      "supportsStructuredOutput": false,
+      "supportsSystemInstructions": false,
+      "supportsTokenCounting": false,
+      "supportsWarmup": false,
     ]
+  }
+
+  private static func flutterError(_ error: Error) -> FlutterError {
+    if error is CancellationError {
+      return nativeError(code: "cancelled", message: "Generation cancelled.")
+    }
+#if canImport(FoundationModels)
+    if #available(iOS 26.0, *),
+       let generationError = error as? LanguageModelSession.GenerationError {
+      switch generationError {
+      case .exceededContextWindowSize:
+        return nativeError(code: "requestTooLarge", message: "The local AI request is too large.")
+      case .guardrailViolation:
+        return nativeError(code: "guardrailViolation", message: "The request was blocked by Apple Intelligence safety controls.")
+      case .unsupportedLanguageOrLocale:
+        return nativeError(code: "unsupportedLanguage", message: "Apple Intelligence does not support one of the selected languages.")
+      case .rateLimited:
+        return nativeError(code: "busy", message: "Apple Intelligence is busy. Try again shortly.")
+      case .refusal:
+        return nativeError(code: "refusal", message: "Apple Intelligence declined this request.")
+      case .decodingFailure, .unsupportedGuide:
+        return nativeError(code: "structuredOutputFailure", message: "Apple Intelligence could not create the required response structure.")
+      case .assetsUnavailable:
+        return nativeError(code: "unavailable", message: "Apple Intelligence model assets are unavailable.")
+      case .concurrentRequests:
+        return nativeError(code: "busy", message: "Apple Intelligence is already processing a request.")
+      @unknown default:
+        break
+      }
+    }
+#endif
+    let nsError = error as NSError
+    let code = nsError.domain == "OnDeviceAiUnavailable" ? "unavailable" : "generationFailed"
+    return nativeError(code: code, message: nsError.localizedDescription)
+  }
+
+  private static func nativeError(code: String, message: String) -> FlutterError {
+    FlutterError(
+      code: "on_device_ai",
+      message: message,
+      details: ["errorCode": code]
+    )
+  }
+
+  private static func jsonString(_ object: [String: Any]) throws -> String {
+    let data = try JSONSerialization.data(withJSONObject: object)
+    return String(decoding: data, as: UTF8.self)
   }
 }
 
 #if canImport(FoundationModels)
 @available(iOS 26.0, *)
-private enum FoundationModelsAvailability {
-  static func currentMap() -> [String: Any] {
-    let model = SystemLanguageModel.default
-    switch model.availability {
-    case .available:
-      return [
-        "status": "ready",
-        "reason": "unknown",
-        "maxInputTokens": currentLimits()["maxInputTokens"] ?? 3500,
-        "maxOutputTokens": currentLimits()["maxOutputTokens"] ?? 4096,
-      ]
-    case .unavailable(.deviceNotEligible):
-      return unsupported(reason: "deviceNotEligible", message: "This device does not support Apple Intelligence.")
-    case .unavailable(.appleIntelligenceNotEnabled):
-      return unsupported(
-        reason: "appleIntelligenceNotEnabled",
-        message: "Apple Intelligence is disabled in Settings."
-      )
-    case .unavailable(.modelNotReady):
-      return [
-        "status": "temporarilyUnavailable",
-        "reason": "modelNotReady",
-        "message": "The on-device model is not ready yet.",
-        "maxInputTokens": 3500,
-        "maxOutputTokens": 4096,
-      ]
-    case .unavailable:
-      return unsupported(reason: "featureUnavailable", message: "On-device AI is unavailable.")
-    }
-  }
+@Generable(description: "A concise bilingual example sentence")
+private struct BilingualSentenceOutput {
+  @Guide(description: "Sentence in the source language")
+  var source: String
+  @Guide(description: "Learner-friendly pronunciation")
+  var transcription: String
+  @Guide(description: "Faithful translated sentence")
+  var translation: String
 
-  static func currentLimits() -> [String: Int] {
-    let model = SystemLanguageModel.default
-    let contextSize = model.contextSize
-    let maxInput = min(contextSize > 0 ? contextSize - 512 : 3500, 3500)
-    return ["maxInputTokens": maxInput, "maxOutputTokens": 4096]
+  var dictionary: [String: Any] {
+    ["source": source, "transcription": transcription, "translation": translation]
   }
+}
 
-  private static func unsupported(reason: String, message: String) -> [String: Any] {
+@available(iOS 26.0, *)
+@Generable(description: "The opening segment of a bilingual passage")
+private struct PassageStartOutput {
+  @Guide(description: "Short title in the source language")
+  var title: String
+  @Guide(description: "Faithful translation of the title")
+  var titleTranslation: String
+  @Guide(description: "Short theme used to continue the passage")
+  var theme: String
+  @Guide(description: "Passage segment in the source language")
+  var source: String
+  @Guide(description: "Faithful translation of the passage segment")
+  var translation: String
+
+  var dictionary: [String: Any] {
     [
-      "status": "unsupported",
-      "reason": reason,
-      "message": message,
-      "maxInputTokens": 3500,
-      "maxOutputTokens": 4096,
+      "title": title,
+      "titleTranslation": titleTranslation,
+      "theme": theme,
+      "source": source,
+      "translation": translation,
     ]
   }
 }
 
 @available(iOS 26.0, *)
-private enum FoundationModelsGenerator {
-  static func generate(
-    prompt: String,
-    systemInstruction: String?,
-    maxOutputTokens: Int
-  ) async throws -> String {
-    let model = SystemLanguageModel.default
-    guard model.isAvailable else {
-      throw NSError(
-        domain: "OnDeviceAi",
-        code: 2,
-        userInfo: [NSLocalizedDescriptionKey: "On-device AI is not available."]
-      )
-    }
+@Generable(description: "A continuation segment of a bilingual passage")
+private struct PassageSegmentOutput {
+  @Guide(description: "Passage segment in the source language")
+  var source: String
+  @Guide(description: "Faithful translation of the passage segment")
+  var translation: String
 
-    let instruction =
-      systemInstruction
-      ?? "Return only the JSON object requested by the user. Do not use Markdown."
-    let session = LanguageModelSession {
-      instruction
-    }
-    let cappedTokens = max(1, min(maxOutputTokens, 4096))
-    _ = cappedTokens
-    let response = try await session.respond(to: prompt)
-    let text = String(describing: response.content).trimmingCharacters(
-      in: .whitespacesAndNewlines
-    )
-    if text.isEmpty {
-      throw NSError(
-        domain: "OnDeviceAi",
-        code: 3,
-        userInfo: [NSLocalizedDescriptionKey: "On-device AI returned an empty response."]
-      )
-    }
-    return text
+  var dictionary: [String: Any] { ["source": source, "translation": translation] }
+}
+
+@available(iOS 26.0, *)
+@Generable(description: "A bilingual sentence pair")
+private struct QuizPairOutput {
+  @Guide(description: "Sentence in the source language")
+  var source: String
+  @Guide(description: "Faithful translated sentence")
+  var translation: String
+
+  var dictionary: [String: Any] { ["source": source, "translation": translation] }
+}
+
+@available(iOS 26.0, *)
+@Generable(description: "Exactly five bilingual sentence pairs")
+private struct QuizBatchOutput {
+  @Guide(description: "Five unique bilingual pairs", .count(5))
+  var sentences: [QuizPairOutput]
+
+  var dictionary: [String: Any] { ["sentences": sentences.map(\.dictionary)] }
+}
+
+@available(iOS 26.0, *)
+@Generable(description: "Assessment of a learner translation")
+private struct TranslationCheckOutput {
+  @Guide(description: "Whether the answer preserves the expected meaning")
+  var correct: Bool
+  @Guide(description: "Short, helpful learner feedback")
+  var feedback: String
+  @Guide(description: "Correct answer, or an empty string when unnecessary")
+  var correctedAnswer: String
+  @Guide(description: "Learner-friendly pronunciation, or an empty string")
+  var transcription: String
+
+  var dictionary: [String: Any] {
+    [
+      "correct": correct,
+      "feedback": feedback,
+      "correctedAnswer": correctedAnswer,
+      "transcription": transcription,
+    ]
   }
+}
+
+@available(iOS 26.4, *)
+private func schemaTokenCount(model: SystemLanguageModel, schema: String) async throws -> Int {
+  let generationSchema: GenerationSchema
+  switch schema {
+  case "bilingualSentence": generationSchema = BilingualSentenceOutput.generationSchema
+  case "passageStart": generationSchema = PassageStartOutput.generationSchema
+  case "passageSegment": generationSchema = PassageSegmentOutput.generationSchema
+  case "quizBatch": generationSchema = QuizBatchOutput.generationSchema
+  case "translationCheck": generationSchema = TranslationCheckOutput.generationSchema
+  default: return 0
+  }
+  return try await model.tokenCount(for: generationSchema)
 }
 #endif

@@ -22,6 +22,7 @@ class _FakeClient implements AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     prompts.add(prompt);

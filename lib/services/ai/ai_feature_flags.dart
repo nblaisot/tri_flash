@@ -2,7 +2,10 @@
 class AiFeatureFlags {
   const AiFeatureFlags._();
 
-  /// On-device Gemini Nano / Foundation Models.
-  /// Hidden until Google Prompt API allowlists more devices (e.g. Z Fold 8).
-  static const enableOnDeviceAi = false;
+  /// Emergency build-time kill switch. Availability is otherwise determined
+  /// by the operating system and the installed system model.
+  static const enableOnDeviceAi = bool.fromEnvironment(
+    'ENABLE_ON_DEVICE_AI',
+    defaultValue: true,
+  );
 }

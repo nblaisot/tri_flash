@@ -4,8 +4,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:tri_flash/models/ai_models.dart';
 
 class AiSettingsService {
-  AiSettingsService({FlutterSecureStorage? secureStorage})
-    : _secureStorage = secureStorage ?? const FlutterSecureStorage();
+  AiSettingsService({
+    FlutterSecureStorage? secureStorage,
+    OnDeviceAiBridge? onDeviceBridge,
+  }) : _secureStorage = secureStorage ?? const FlutterSecureStorage(),
+       _onDeviceBridge = onDeviceBridge ?? OnDeviceAiBridge();
 
   static const _providerKey = 'ai_provider';
   static const _consentKey = 'ai_privacy_consent';
@@ -15,6 +18,7 @@ class AiSettingsService {
   static const _mistralKey = 'mistral_api_key';
 
   final FlutterSecureStorage _secureStorage;
+  final OnDeviceAiBridge _onDeviceBridge;
 
   Future<AiProviderType?> getProvider() async {
     final prefs = await SharedPreferences.getInstance();
@@ -81,11 +85,18 @@ class AiSettingsService {
     AiProviderType.openAi => (await getOpenAiApiKey())?.isNotEmpty == true,
     AiProviderType.mistral => (await getMistralApiKey())?.isNotEmpty == true,
     AiProviderType.onDevice =>
-      (await OnDeviceAiBridge().getAvailability()).isReady,
+      (await _onDeviceBridge.getAvailability()).isReady,
   };
 
   Future<OnDeviceAiAvailability> getOnDeviceAvailability() =>
-      OnDeviceAiBridge().getAvailability();
+      _onDeviceBridge.getAvailability();
+
+  Future<void> warmupOnDeviceModel() => _onDeviceBridge.warmup();
+
+  Future<void> downloadOnDeviceModel() => _onDeviceBridge.downloadModel();
+
+  Stream<OnDeviceAiDownloadProgress> get onDeviceDownloadProgress =>
+      _onDeviceBridge.downloadProgress;
 }
 
 class CodexCredentialStore {

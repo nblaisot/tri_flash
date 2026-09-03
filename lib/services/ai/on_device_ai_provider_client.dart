@@ -13,11 +13,29 @@ class OnDeviceAiProviderClient implements AiProviderClient {
 
   final OnDeviceAiBridge _bridge;
 
+  Future<OnDeviceAiAvailability> getAvailability() => _bridge.getAvailability();
+
+  Future<void> warmup() => _bridge.warmup();
+
+  Future<bool> supportsLanguages(List<String> languageCodes) =>
+      _bridge.supportsLanguages(languageCodes);
+
+  Future<int> countTokens(
+    String prompt, {
+    String? systemInstruction,
+    AiResponseSchema? responseSchema,
+  }) => _bridge.countTokens(
+    prompt: prompt,
+    systemInstruction: systemInstruction,
+    responseSchema: _nativeSchema(responseSchema),
+  );
+
   @override
   Future<String> generate(
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     void Function()? removeListener;
@@ -29,26 +47,73 @@ class OnDeviceAiProviderClient implements AiProviderClient {
       if (!availability.isReady) {
         throw AiProviderException(_messageFor(availability));
       }
-      final result = await _bridge.generate(
-        prompt: prompt,
-        systemInstruction: jsonSystemInstruction,
-        maxOutputTokens: maxOutputTokens,
-      );
+      String? result;
+      for (var attempt = 0; attempt < 3; attempt++) {
+        cancellationToken?.throwIfCancelled();
+        try {
+          result = await _bridge.generate(
+            prompt: prompt,
+            systemInstruction: jsonSystemInstruction,
+            maxOutputTokens: maxOutputTokens,
+            responseSchema: _nativeSchema(responseSchema),
+          );
+          break;
+        } on OnDeviceAiException catch (error) {
+          if (error.code != OnDeviceAiErrorCode.busy || attempt == 2) rethrow;
+          await _cancellableDelay(
+            attempt == 0
+                ? const Duration(milliseconds: 500)
+                : const Duration(milliseconds: 1500),
+            cancellationToken,
+          );
+        }
+      }
       cancellationToken?.throwIfCancelled();
-      return result;
-    } on PlatformException catch (error) {
-      if (error.code == 'cancelled' ||
+      return result!;
+    } on OnDeviceAiException catch (error) {
+      if (error.code == OnDeviceAiErrorCode.cancelled ||
           cancellationToken?.isCancelled == true) {
+        throw const AiGenerationCancelled();
+      }
+      // BUSY has already received the only retries allowed for a local call.
+      throw AiProviderException(error.message);
+    } on PlatformException catch (error) {
+      if (error.code == 'cancelled' || cancellationToken?.isCancelled == true) {
         throw const AiGenerationCancelled();
       }
       throw AiProviderException(
         error.message ?? 'On-device AI request failed.',
-        isTransient: error.code == 'generate_failed',
       );
     } finally {
       removeListener?.call();
     }
   }
+
+  static Future<void> _cancellableDelay(
+    Duration duration,
+    AiCancellationToken? token,
+  ) async {
+    const slice = Duration(milliseconds: 100);
+    var elapsed = Duration.zero;
+    while (elapsed < duration) {
+      token?.throwIfCancelled();
+      await Future<void>.delayed(slice);
+      elapsed += slice;
+    }
+  }
+
+  static OnDeviceAiResponseSchema? _nativeSchema(
+    AiResponseSchema? schema,
+  ) => switch (schema) {
+    AiResponseSchema.bilingualSentence =>
+      OnDeviceAiResponseSchema.bilingualSentence,
+    AiResponseSchema.passageStart => OnDeviceAiResponseSchema.passageStart,
+    AiResponseSchema.passageSegment => OnDeviceAiResponseSchema.passageSegment,
+    AiResponseSchema.quizBatch => OnDeviceAiResponseSchema.quizBatch,
+    AiResponseSchema.translationCheck =>
+      OnDeviceAiResponseSchema.translationCheck,
+    null => null,
+  };
 
   static String _messageFor(OnDeviceAiAvailability availability) {
     if (availability.message?.isNotEmpty == true) {
@@ -65,11 +130,15 @@ class OnDeviceAiProviderClient implements AiProviderClient {
         'The on-device model is not ready yet.',
       OnDeviceAiUnavailableReason.modelDownloadRequired =>
         'Download the on-device model before generating text.',
+      OnDeviceAiUnavailableReason.systemUpdateRequired =>
+        'Update the device software before using on-device AI.',
       OnDeviceAiUnavailableReason.featureUnavailable =>
         'On-device AI is temporarily unavailable.',
+      OnDeviceAiUnavailableReason.unsupportedLanguage =>
+        'The selected language is not supported by the on-device model.',
       OnDeviceAiUnavailableReason.platformUnsupported ||
-      OnDeviceAiUnavailableReason.unknown =>
-        'On-device AI is not available on this platform.',
+      OnDeviceAiUnavailableReason
+          .unknown => 'On-device AI is not available on this platform.',
     };
   }
 }

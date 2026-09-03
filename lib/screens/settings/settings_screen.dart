@@ -52,6 +52,11 @@ class _SettingsScreenState extends State<SettingsScreen> {
       }
       if (AiFeatureFlags.enableOnDeviceAi) {
         _onDeviceAvailability = await _aiSettings.getOnDeviceAvailability();
+        if (_provider == AiProviderType.onDevice &&
+            _onDeviceAvailability?.isEligible != true) {
+          _provider = null;
+          _providerConfigured = false;
+        }
       }
     } catch (e) {
       if (mounted) {
@@ -196,7 +201,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                       .where(
                         (provider) =>
                             provider != AiProviderType.onDevice ||
-                            AiFeatureFlags.enableOnDeviceAi,
+                            (AiFeatureFlags.enableOnDeviceAi &&
+                                _onDeviceAvailability?.isEligible == true),
                       )
                       .map(
                         (provider) => DropdownMenuItem(
@@ -274,6 +280,23 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _onDeviceStatusLabel(l10n, _onDeviceAvailability!),
                 style: Theme.of(context).textTheme.bodySmall,
               ),
+              if (_onDeviceAvailability!.providerName?.isNotEmpty == true ||
+                  _onDeviceAvailability!.modelName?.isNotEmpty == true) ...[
+                const SizedBox(height: 4),
+                Text(
+                  [
+                        _onDeviceAvailability!.providerName,
+                        _onDeviceAvailability!.modelName,
+                        if (_onDeviceAvailability!.providerName ==
+                            'Gemini Nano')
+                          'Stable',
+                      ]
+                      .whereType<String>()
+                      .where((value) => value.isNotEmpty)
+                      .join(' · '),
+                  style: Theme.of(context).textTheme.labelSmall,
+                ),
+              ],
               if (_onDeviceAvailability!.status ==
                   OnDeviceAiStatus.downloadRequired) ...[
                 const SizedBox(height: 8),
@@ -681,14 +704,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
     AppLocalizations l10n,
     OnDeviceAiAvailability availability,
   ) {
-    if (availability.message?.isNotEmpty == true) return availability.message!;
+    if (availability.reason ==
+        OnDeviceAiUnavailableReason.appleIntelligenceNotEnabled) {
+      return l10n.text('onDeviceAppleSetup');
+    }
+    if (availability.reason ==
+        OnDeviceAiUnavailableReason.systemUpdateRequired) {
+      return l10n.text('onDeviceSystemUpdate');
+    }
+    if (availability.reason == OnDeviceAiUnavailableReason.modelNotReady) {
+      return l10n.text('onDeviceModelPreparing');
+    }
     return switch (availability.status) {
       OnDeviceAiStatus.ready => l10n.text('onDeviceReady'),
-      OnDeviceAiStatus.downloadRequired => l10n.text('onDeviceDownloadRequired'),
+      OnDeviceAiStatus.setupRequired => l10n.text('onDeviceUnavailable'),
+      OnDeviceAiStatus.downloadRequired => l10n.text(
+        'onDeviceDownloadRequired',
+      ),
       OnDeviceAiStatus.downloading => l10n.text('onDeviceDownloading'),
-      OnDeviceAiStatus.temporarilyUnavailable =>
-        l10n.text('onDeviceTemporarilyUnavailable'),
-      OnDeviceAiStatus.unsupported => l10n.text('onDeviceUnavailable'),
+      OnDeviceAiStatus.temporarilyUnavailable => l10n.text(
+        'onDeviceTemporarilyUnavailable',
+      ),
+      OnDeviceAiStatus.unsupported =>
+        availability.message ?? l10n.text('onDeviceUnavailable'),
     };
   }
 }

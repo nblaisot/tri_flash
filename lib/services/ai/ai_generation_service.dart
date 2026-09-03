@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/services/ai/ai_provider_client.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
+import 'package:tri_flash/services/ai/on_device_ai_provider_client.dart';
 
 enum AiGenerationStage {
   generatingText,
@@ -44,10 +45,15 @@ class AiGenerationService {
   static const quizOutputTokens = 8000;
   static const checkOutputTokens = 2000;
 
-  static const onDeviceSentenceOutputTokens = 2048;
-  static const onDeviceTextOutputTokens = 4096;
-  static const onDeviceQuizOutputTokens = 4096;
-  static const onDeviceCheckOutputTokens = 1024;
+  static const onDeviceSentenceOutputTokens = 768;
+  static const onDeviceTextOutputTokens = 1536;
+  static const onDeviceQuizOutputTokens = 1280;
+  static const onDeviceCheckOutputTokens = 512;
+
+  static const onDeviceSafetyTokens = 256;
+  static const onDeviceMaxInputTokens = 2800;
+  static const onDevicePassageWordsPerBatch = 75;
+  static const onDeviceQuizItemsPerBatch = 5;
 
   static const allowedQuizSentenceCounts = {5, 10, 15, 20};
 
@@ -99,6 +105,8 @@ Requirements:
         _requiredString(data, 'transcription');
         _requiredString(data, 'translation');
       },
+      responseSchema: AiResponseSchema.bilingualSentence,
+      languageCodes: _languageCodes(sourceLanguage, translationLanguage),
     );
     return BilingualSentence(
       source: data['source'] as String,
@@ -154,6 +162,20 @@ Requirements:
       const AiGenerationProgress(AiGenerationStage.generatingText),
     );
 
+    if (provider == AiProviderType.onDevice) {
+      return _generateLocalText(
+        availableVocabulary: availableVocabulary,
+        annotationVocabulary: annotationVocabulary,
+        categories: categories,
+        targetWordCount: targetWordCount,
+        outsideVocabularyPercent: outsideVocabularyPercent,
+        sourceLanguage: sourceLanguage,
+        translationLanguage: translationLanguage,
+        cancellationToken: token,
+        onProgress: onProgress,
+      );
+    }
+
     final bilingual = await _generateJson(
       provider: provider,
       maxOutputTokens: _textOutputTokens(provider),
@@ -184,6 +206,8 @@ $corpusJson
         _requiredString(data, 'source');
         _requiredString(data, 'translation');
       },
+      responseSchema: AiResponseSchema.passageStart,
+      languageCodes: _languageCodes(sourceLanguage, translationLanguage),
     );
     final title = bilingual['title'] as String;
     final titleTranslation = bilingual['titleTranslation'] as String;
@@ -260,6 +284,19 @@ $corpusJson
       const AiGenerationProgress(AiGenerationStage.generatingQuiz),
     );
 
+    if (provider == AiProviderType.onDevice) {
+      return _generateLocalQuiz(
+        availableVocabulary: availableVocabulary,
+        categories: categories,
+        sentenceCount: sentenceCount,
+        direction: direction,
+        sourceLanguage: sourceLanguage,
+        translationLanguage: translationLanguage,
+        cancellationToken: token,
+        onProgress: onProgress,
+      );
+    }
+
     final data = await _generateJson(
       provider: provider,
       maxOutputTokens: _quizOutputTokens(provider),
@@ -287,9 +324,7 @@ $corpusJson
       validate: (data) {
         final sentences = data['sentences'];
         if (sentences is! List || sentences.length != sentenceCount) {
-          throw FormatException(
-            'Expected exactly $sentenceCount sentences.',
-          );
+          throw FormatException('Expected exactly $sentenceCount sentences.');
         }
         for (final item in sentences) {
           if (item is! Map) {
@@ -300,6 +335,8 @@ $corpusJson
           _requiredString(map, 'translation');
         }
       },
+      responseSchema: AiResponseSchema.quizBatch,
+      languageCodes: _languageCodes(sourceLanguage, translationLanguage),
     );
 
     token.throwIfCancelled();
@@ -403,6 +440,8 @@ Return exactly: {"correct":true|false,"feedback":"...","correctedAnswer":"...","
           }
         }
       },
+      responseSchema: AiResponseSchema.translationCheck,
+      languageCodes: _languageCodes(promptLanguage, answerLanguage),
     );
 
     final isCorrect = data['correct'] as bool;
@@ -423,6 +462,446 @@ Return exactly: {"correct":true|false,"feedback":"...","correctedAnswer":"...","
       correctedAnswer: isCorrect ? corrected : (corrected ?? expectedAnswer),
       transcription: transcription,
     );
+  }
+
+  Future<GeneratedText> _generateLocalText({
+    required List<VocabularyEntry> availableVocabulary,
+    required List<VocabularyEntry> annotationVocabulary,
+    required List<String> categories,
+    required int targetWordCount,
+    required int outsideVocabularyPercent,
+    required String sourceLanguage,
+    required String translationLanguage,
+    required AiCancellationToken cancellationToken,
+    AiProgressCallback? onProgress,
+  }) async {
+    final client = await (_clientFactory ?? AiProviderClientFactory(settings))
+        .create(AiProviderType.onDevice);
+    final batchCount = max(
+      1,
+      (targetWordCount / onDevicePassageWordsPerBatch).ceil(),
+    );
+    final batches = partitionVocabularyForBatches(
+      availableVocabulary,
+      batchCount,
+    );
+    final wordTargets = distributeTarget(targetWordCount, batchCount);
+    final sources = <String>[];
+    final translations = <String>[];
+    var title = '';
+    var titleTranslation = '';
+    var theme = '';
+
+    for (var index = 0; index < batchCount; index++) {
+      cancellationToken.throwIfCancelled();
+      onProgress?.call(
+        AiGenerationProgress(
+          AiGenerationStage.generatingText,
+          current: index + 1,
+          total: batchCount,
+        ),
+      );
+      final isFirst = index == 0;
+      final schema =
+          isFirst
+              ? AiResponseSchema.passageStart
+              : AiResponseSchema.passageSegment;
+      final basePrompt = _localPassagePrompt(
+        sourceLanguage: sourceLanguage,
+        translationLanguage: translationLanguage,
+        targetWords: wordTargets[index],
+        outsideVocabularyPercent: outsideVocabularyPercent,
+        isFirst: isFirst,
+        theme: theme,
+        previousSource: sources.isEmpty ? null : _continuityTail(sources.last),
+        previousTranslation:
+            translations.isEmpty ? null : _continuityTail(translations.last),
+        vocabulary: const [],
+      );
+      final inputBudget = await _localInputBudget(
+        client,
+        outputReserve: onDeviceTextOutputTokens,
+      );
+      final vocabulary = await _fitVocabulary(
+        client: client,
+        candidates: batches[index],
+        inputBudget: inputBudget,
+        responseSchema: schema,
+        buildPrompt:
+            (entries) => _localPassagePrompt(
+              sourceLanguage: sourceLanguage,
+              translationLanguage: translationLanguage,
+              targetWords: wordTargets[index],
+              outsideVocabularyPercent: outsideVocabularyPercent,
+              isFirst: isFirst,
+              theme: theme,
+              previousSource:
+                  sources.isEmpty ? null : _continuityTail(sources.last),
+              previousTranslation:
+                  translations.isEmpty
+                      ? null
+                      : _continuityTail(translations.last),
+              vocabulary: entries,
+            ),
+      );
+      final prompt =
+          vocabulary.isEmpty
+              ? basePrompt
+              : _localPassagePrompt(
+                sourceLanguage: sourceLanguage,
+                translationLanguage: translationLanguage,
+                targetWords: wordTargets[index],
+                outsideVocabularyPercent: outsideVocabularyPercent,
+                isFirst: isFirst,
+                theme: theme,
+                previousSource:
+                    sources.isEmpty ? null : _continuityTail(sources.last),
+                previousTranslation:
+                    translations.isEmpty
+                        ? null
+                        : _continuityTail(translations.last),
+                vocabulary: vocabulary,
+              );
+      final data = await _generateJson(
+        provider: AiProviderType.onDevice,
+        prompt: prompt,
+        maxOutputTokens: onDeviceTextOutputTokens,
+        cancellationToken: cancellationToken,
+        responseSchema: schema,
+        languageCodes: _languageCodes(sourceLanguage, translationLanguage),
+        client: client,
+        validate: (data) {
+          _requiredString(data, 'source');
+          _requiredString(data, 'translation');
+          if (isFirst) {
+            _requiredString(data, 'title');
+            _requiredString(data, 'titleTranslation');
+            _requiredString(data, 'theme');
+          }
+        },
+      );
+      if (isFirst) {
+        title = (data['title'] as String).trim();
+        titleTranslation = (data['titleTranslation'] as String).trim();
+        theme = (data['theme'] as String).trim();
+      }
+      sources.add((data['source'] as String).trim());
+      translations.add((data['translation'] as String).trim());
+    }
+
+    cancellationToken.throwIfCancelled();
+    final source = sources.join('\n\n');
+    final translation = translations.join('\n\n');
+    onProgress?.call(
+      const AiGenerationProgress(AiGenerationStage.annotatingSource),
+    );
+    final annotations = annotateWithVocabulary(source, annotationVocabulary);
+    cancellationToken.throwIfCancelled();
+    onProgress?.call(const AiGenerationProgress(AiGenerationStage.saving));
+    return GeneratedText(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      title: title,
+      titleTranslation: titleTranslation,
+      source: source,
+      translation: translation,
+      createdAt: DateTime.now(),
+      categories: List.unmodifiable(categories),
+      targetWordCount: targetWordCount,
+      outsideVocabularyPercent: outsideVocabularyPercent,
+      provider: AiProviderType.onDevice,
+      sourceAnnotations: List.unmodifiable(annotations),
+      translationAnnotations: const [],
+    );
+  }
+
+  Future<TranslationQuiz> _generateLocalQuiz({
+    required List<VocabularyEntry> availableVocabulary,
+    required List<String> categories,
+    required int sentenceCount,
+    required TranslationQuizDirection direction,
+    required String sourceLanguage,
+    required String translationLanguage,
+    required AiCancellationToken cancellationToken,
+    AiProgressCallback? onProgress,
+  }) async {
+    final client = await (_clientFactory ?? AiProviderClientFactory(settings))
+        .create(AiProviderType.onDevice);
+    final batchCount = sentenceCount ~/ onDeviceQuizItemsPerBatch;
+    final batches = partitionVocabularyForBatches(
+      availableVocabulary,
+      batchCount,
+    );
+    final pairs = <Map<String, dynamic>>[];
+    final seenSources = <String>{};
+
+    for (var index = 0; index < batchCount; index++) {
+      cancellationToken.throwIfCancelled();
+      onProgress?.call(
+        AiGenerationProgress(
+          AiGenerationStage.generatingQuiz,
+          current: index + 1,
+          total: batchCount,
+        ),
+      );
+      final inputBudget = await _localInputBudget(
+        client,
+        outputReserve: onDeviceQuizOutputTokens,
+      );
+      String buildPrompt(List<VocabularyEntry> entries) => _localQuizPrompt(
+        sourceLanguage: sourceLanguage,
+        translationLanguage: translationLanguage,
+        vocabulary: entries,
+        previousSources: seenSources,
+      );
+      final vocabulary = await _fitVocabulary(
+        client: client,
+        candidates: batches[index],
+        inputBudget: inputBudget,
+        responseSchema: AiResponseSchema.quizBatch,
+        buildPrompt: buildPrompt,
+      );
+      final data = await _generateJson(
+        provider: AiProviderType.onDevice,
+        prompt: buildPrompt(vocabulary),
+        maxOutputTokens: onDeviceQuizOutputTokens,
+        cancellationToken: cancellationToken,
+        responseSchema: AiResponseSchema.quizBatch,
+        languageCodes: _languageCodes(sourceLanguage, translationLanguage),
+        client: client,
+        validate: (data) {
+          final sentences = data['sentences'];
+          if (sentences is! List ||
+              sentences.length != onDeviceQuizItemsPerBatch) {
+            throw const FormatException('Expected exactly 5 sentences.');
+          }
+          final batchSeen = <String>{};
+          for (final item in sentences) {
+            if (item is! Map) {
+              throw const FormatException('Each sentence must be an object.');
+            }
+            final map = Map<String, dynamic>.from(item);
+            final source = _requiredString(map, 'source').trim().toLowerCase();
+            _requiredString(map, 'translation');
+            if (seenSources.contains(source) || !batchSeen.add(source)) {
+              throw const FormatException('Quiz sentences must be unique.');
+            }
+          }
+        },
+      );
+      for (final item in data['sentences'] as List<dynamic>) {
+        final pair = Map<String, dynamic>.from(item as Map);
+        seenSources.add((pair['source'] as String).trim().toLowerCase());
+        pairs.add(pair);
+      }
+    }
+
+    cancellationToken.throwIfCancelled();
+    final stamp = DateTime.now().microsecondsSinceEpoch;
+    return TranslationQuiz(
+      items: List.unmodifiable([
+        for (var index = 0; index < pairs.length; index++)
+          TranslationQuizItem.fromBilingualPair(
+            id: '${stamp}_$index',
+            source: pairs[index]['source'] as String,
+            translation: pairs[index]['translation'] as String,
+            direction: direction,
+          ),
+      ]),
+      categories: List.unmodifiable(categories),
+      sentenceCount: sentenceCount,
+      direction: direction,
+      provider: AiProviderType.onDevice,
+    );
+  }
+
+  Future<int> _localInputBudget(
+    AiProviderClient client, {
+    required int outputReserve,
+  }) async {
+    var limit = 4096;
+    if (client is OnDeviceAiProviderClient) {
+      final availability = await client.getAvailability();
+      limit = availability.totalTokenLimit;
+    }
+    return min(
+      onDeviceMaxInputTokens,
+      max(256, limit - outputReserve - onDeviceSafetyTokens),
+    );
+  }
+
+  Future<List<VocabularyEntry>> _fitVocabulary({
+    required AiProviderClient client,
+    required List<VocabularyEntry> candidates,
+    required int inputBudget,
+    required AiResponseSchema responseSchema,
+    required String Function(List<VocabularyEntry>) buildPrompt,
+  }) async {
+    final selected = <VocabularyEntry>[];
+    for (final entry in candidates) {
+      final trial = [...selected, entry];
+      final prompt = buildPrompt(trial);
+      final count = await _countLocalInput(client, prompt, responseSchema);
+      if (count > inputBudget) continue;
+      selected.add(entry);
+    }
+    return selected;
+  }
+
+  Future<int> _countLocalInput(
+    AiProviderClient client,
+    String prompt,
+    AiResponseSchema schema,
+  ) async {
+    if (client is OnDeviceAiProviderClient) {
+      try {
+        final availability = await client.getAvailability();
+        if (availability.supportsTokenCounting) {
+          return await client.countTokens(
+            prompt,
+            systemInstruction: OnDeviceAiProviderClient.jsonSystemInstruction,
+            responseSchema: schema,
+          );
+        }
+      } catch (_) {
+        // Fall back to the deliberately conservative local estimate.
+      }
+    }
+    return estimateLocalTokens(prompt);
+  }
+
+  static String _localPassagePrompt({
+    required String sourceLanguage,
+    required String translationLanguage,
+    required int targetWords,
+    required int outsideVocabularyPercent,
+    required bool isFirst,
+    required String theme,
+    required String? previousSource,
+    required String? previousTranslation,
+    required List<VocabularyEntry> vocabulary,
+  }) {
+    final continuity =
+        isFirst
+            ? 'Invent a concise bilingual title and a short theme for the whole passage.'
+            : '''Continue the same passage and theme: ${jsonEncode(theme)}.
+The prior segment ended with:
+- $sourceLanguage: ${jsonEncode(previousSource)}
+- $translationLanguage: ${jsonEncode(previousTranslation)}
+Do not repeat those sentences.''';
+    return '''
+Write one coherent bilingual passage segment for language learning.
+
+$continuity
+
+Requirements:
+- Source language: $sourceLanguage.
+- Translation language: $translationLanguage.
+- Write approximately $targetWords lexical words in the source segment.
+- The translation must faithfully express the same segment.
+- Aim for approximately $outsideVocabularyPercent% content vocabulary outside the supplied vocabulary.
+- Weave supplied words and phrases in naturally. For sentence-like entries, reuse the pattern but never copy the sentence.
+- Keep the output concise and self-contained.
+- Return exactly ${isFirst ? '{"title":"...","titleTranslation":"...","theme":"...","source":"...","translation":"..."}' : '{"source":"...","translation":"..."}'}.
+
+Vocabulary:
+${jsonEncode(_vocabularyDump(vocabulary))}
+''';
+  }
+
+  static String _localQuizPrompt({
+    required String sourceLanguage,
+    required String translationLanguage,
+    required List<VocabularyEntry> vocabulary,
+    required Set<String> previousSources,
+  }) => '''
+Create exactly 5 unique bilingual sentence pairs for a language-learning translation quiz.
+
+Requirements:
+- Source language: $sourceLanguage.
+- Translation language: $translationLanguage.
+- Each pair must express the same meaning and be natural and pedagogically useful.
+- Vary topics and grammar. Do not repeat earlier source sentences.
+- Weave supplied words and phrases in naturally. For sentence-like entries, reuse the pattern but never copy the sentence.
+- Return exactly: {"sentences":[{"source":"...","translation":"..."}, ...]}.
+
+Earlier source sentences to avoid:
+${jsonEncode(previousSources.toList())}
+
+Vocabulary:
+${jsonEncode(_vocabularyDump(vocabulary))}
+''';
+
+  static List<Map<String, String>> _vocabularyDump(
+    List<VocabularyEntry> vocabulary,
+  ) => [
+    for (final entry in vocabulary)
+      {
+        'source': entry.word,
+        'translation': entry.translation,
+        'category': entry.category,
+      },
+  ];
+
+  static String _continuityTail(String text) {
+    final trimmed = text.trim();
+    if (trimmed.length <= 300) return trimmed;
+    return trimmed.substring(trimmed.length - 300);
+  }
+
+  @visibleForTesting
+  static int estimateLocalTokens(String text) {
+    if (text.isEmpty) return 0;
+    var cjkCharacters = 0;
+    var otherCharacters = 0;
+    for (final rune in text.runes) {
+      if ((rune >= 0x3040 && rune <= 0x30ff) ||
+          (rune >= 0x3400 && rune <= 0x9fff) ||
+          (rune >= 0xac00 && rune <= 0xd7af)) {
+        cjkCharacters++;
+      } else {
+        otherCharacters++;
+      }
+    }
+    final estimate = cjkCharacters + (otherCharacters / 3).ceil();
+    return (estimate * 1.2).ceil();
+  }
+
+  @visibleForTesting
+  static List<int> distributeTarget(int total, int batchCount) {
+    final base = total ~/ batchCount;
+    final remainder = total % batchCount;
+    return [
+      for (var index = 0; index < batchCount; index++)
+        base + (index < remainder ? 1 : 0),
+    ];
+  }
+
+  @visibleForTesting
+  static List<List<VocabularyEntry>> partitionVocabularyForBatches(
+    List<VocabularyEntry> vocabulary,
+    int batchCount,
+  ) {
+    if (batchCount <= 0) throw ArgumentError.value(batchCount, 'batchCount');
+    final byCategory = <String, List<VocabularyEntry>>{};
+    for (final entry in vocabulary) {
+      byCategory.putIfAbsent(entry.category, () => []).add(entry);
+    }
+    final interleaved = <VocabularyEntry>[];
+    var added = true;
+    for (var offset = 0; added; offset++) {
+      added = false;
+      for (final entries in byCategory.values) {
+        if (offset < entries.length) {
+          interleaved.add(entries[offset]);
+          added = true;
+        }
+      }
+    }
+    final batches = List.generate(batchCount, (_) => <VocabularyEntry>[]);
+    for (var index = 0; index < interleaved.length; index++) {
+      batches[index % batchCount].add(interleaved[index]);
+    }
+    return batches;
   }
 
   @visibleForTesting
@@ -533,21 +1012,34 @@ Return exactly: {"correct":true|false,"feedback":"...","correctedAnswer":"...","
     required String prompt,
     required int maxOutputTokens,
     required void Function(Map<String, dynamic>) validate,
+    AiResponseSchema? responseSchema,
+    List<String> languageCodes = const [],
+    AiProviderClient? client,
     AiCancellationToken? cancellationToken,
   }) async {
     Object? lastError;
     for (var attempt = 0; attempt < 2; attempt++) {
       cancellationToken?.throwIfCancelled();
       try {
-        final client = await (_clientFactory ??
-                AiProviderClientFactory(settings))
-            .create(provider);
-        final raw = await client.generate(
+        final requestClient =
+            client ??
+            await (_clientFactory ?? AiProviderClientFactory(settings)).create(
+              provider,
+            );
+        if (requestClient is OnDeviceAiProviderClient &&
+            languageCodes.isNotEmpty &&
+            !await requestClient.supportsLanguages(languageCodes)) {
+          throw const AiProviderException(
+            'The selected language is not supported by the on-device model.',
+          );
+        }
+        final raw = await requestClient.generate(
           attempt == 0
               ? prompt
               : '$prompt\nThe previous response was invalid or incomplete. Return only complete valid JSON.',
           maxOutputTokens: maxOutputTokens,
           cancellationToken: cancellationToken,
+          responseSchema: responseSchema,
         );
         final data = _decodeJsonObject(raw);
         validate(data);
@@ -604,6 +1096,26 @@ Return exactly: {"correct":true|false,"feedback":"...","correctedAnswer":"...","
     }
     return jsonDecode(value.substring(start, end + 1)) as Map<String, dynamic>;
   }
+
+  static List<String> _languageCodes(String first, String second) => [
+    first,
+    second,
+  ].map(_languageCode).whereType<String>().toSet().toList(growable: false);
+
+  static String? _languageCode(String language) => switch (language) {
+    'English' => 'en',
+    'French' => 'fr',
+    'Spanish' => 'es',
+    'German' => 'de',
+    'Italian' => 'it',
+    'Portuguese' => 'pt',
+    'Chinese' => 'zh',
+    'Japanese' => 'ja',
+    'Korean' => 'ko',
+    'Russian' => 'ru',
+    'Arabic' => 'ar',
+    _ => null,
+  };
 
   static List<String> chunkText(
     String text, {

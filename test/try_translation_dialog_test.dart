@@ -21,6 +21,7 @@ class _FakeClient implements AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     final response = responses[calls++];
@@ -80,7 +81,9 @@ void main() {
     expect(find.text('Translate this'), findsOneWidget);
   });
 
-  testWidgets('shows correct feedback after a successful check', (tester) async {
+  testWidgets('shows correct feedback after a successful check', (
+    tester,
+  ) async {
     final settings = AiSettingsService();
     final service = AiGenerationService(
       settings: settings,

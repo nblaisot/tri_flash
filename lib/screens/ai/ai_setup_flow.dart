@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:on_device_ai/on_device_ai.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
@@ -15,44 +17,69 @@ class AiSetupFlow {
     AiSettingsService? settings,
   }) async {
     final service = settings ?? AiSettingsService();
-    if (!await service.hasPrivacyConsent()) {
-      if (!context.mounted) return false;
-      final accepted = await showDialog<bool>(
-        context: context,
-        builder:
-            (context) => AlertDialog(
-              title: Text(context.l10n.text('privacyTitle')),
-              content: Text(context.l10n.text('privacyBody')),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(context, false),
-                  child: Text(context.l10n.text('cancel')),
-                ),
-                FilledButton(
-                  onPressed: () => Navigator.pop(context, true),
-                  child: Text(context.l10n.text('continueAction')),
-                ),
-              ],
-            ),
-      );
-      if (accepted != true) return false;
-      await service.grantPrivacyConsent();
-    }
-
-    var provider = await service.getProvider();
-    if (provider == AiProviderType.onDevice &&
-        !AiFeatureFlags.enableOnDeviceAi) {
-      provider = null;
-    }
+    var provider = await resolveStoredOrLocalDefault(service);
     if (provider == null) {
       if (!context.mounted) return false;
       provider = await chooseProvider(context);
       if (provider == null) return false;
       await service.setProvider(provider);
     }
-    if (await service.isConfigured(provider)) return true;
+    if (provider != AiProviderType.onDevice &&
+        !await service.hasPrivacyConsent()) {
+      if (!context.mounted) return false;
+      final accepted = await _requestCloudConsent(context);
+      if (!accepted) return false;
+      await service.grantPrivacyConsent();
+    }
+    if (await service.isConfigured(provider)) {
+      if (provider == AiProviderType.onDevice) {
+        unawaited(service.warmupOnDeviceModel().catchError((_) {}));
+      }
+      return true;
+    }
     if (!context.mounted) return false;
     return configureProvider(context, provider, settings: service);
+  }
+
+  static Future<AiProviderType?> resolveStoredOrLocalDefault(
+    AiSettingsService service,
+  ) async {
+    final stored = await service.getProvider();
+    if (stored != null) {
+      if (stored == AiProviderType.onDevice) {
+        if (!AiFeatureFlags.enableOnDeviceAi) return null;
+        final availability = await service.getOnDeviceAvailability();
+        if (!availability.isEligible) return null;
+      }
+      return stored;
+    }
+    if (!AiFeatureFlags.enableOnDeviceAi) return null;
+    final availability = await service.getOnDeviceAvailability();
+    if (!availability.isEligible) return null;
+    await service.setProvider(AiProviderType.onDevice);
+    return AiProviderType.onDevice;
+  }
+
+  static Future<bool> _requestCloudConsent(BuildContext context) async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder:
+          (context) => AlertDialog(
+            title: Text(context.l10n.text('privacyTitle')),
+            content: Text(context.l10n.text('privacyBody')),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: Text(context.l10n.text('cancel')),
+              ),
+              FilledButton(
+                onPressed: () => Navigator.pop(context, true),
+                child: Text(context.l10n.text('continueAction')),
+              ),
+            ],
+          ),
+    );
+    return accepted == true;
   }
 
   static Future<AiProviderType?> chooseProvider(BuildContext context) {
@@ -82,14 +109,6 @@ class AiSetupFlow {
                   title: Text(l10n.text('mistralProvider')),
                   onTap: () => Navigator.pop(context, AiProviderType.mistral),
                 ),
-                if (AiFeatureFlags.enableOnDeviceAi)
-                  ListTile(
-                    leading: const Icon(Icons.phone_android),
-                    title: Text(l10n.text('onDeviceProvider')),
-                    subtitle: Text(l10n.text('onDeviceProviderHelp')),
-                    onTap:
-                        () => Navigator.pop(context, AiProviderType.onDevice),
-                  ),
               ],
             ),
           ),
@@ -176,8 +195,7 @@ class AiSetupFlow {
     BuildContext context,
     AiSettingsService service,
   ) async {
-    final bridge = OnDeviceAiBridge();
-    var availability = await bridge.getAvailability();
+    var availability = await service.getOnDeviceAvailability();
     if (availability.isReady) return true;
     if (!context.mounted) return false;
 
@@ -207,13 +225,8 @@ class AiSetupFlow {
       );
       if (accepted != true) return false;
       if (!context.mounted) return false;
-      try {
-        await bridge.downloadModel();
-      } catch (error) {
-        if (context.mounted) _showError(context, error.toString());
-        return false;
-      }
-      availability = await bridge.getAvailability();
+      if (!await _downloadOnDevice(context, service)) return false;
+      availability = await service.getOnDeviceAvailability();
     }
 
     if (availability.isReady) return true;
@@ -223,16 +236,86 @@ class AiSetupFlow {
     return false;
   }
 
+  static Future<bool> _downloadOnDevice(
+    BuildContext context,
+    AiSettingsService service,
+  ) async {
+    final progress = ValueNotifier<OnDeviceAiDownloadProgress?>(null);
+    final subscription = service.onDeviceDownloadProgress.listen((event) {
+      progress.value = event;
+    });
+    unawaited(
+      showDialog<void>(
+        context: context,
+        barrierDismissible: false,
+        builder:
+            (dialogContext) => AlertDialog(
+              content: ValueListenableBuilder<OnDeviceAiDownloadProgress?>(
+                valueListenable: progress,
+                builder: (context, value, _) {
+                  final bytes = value?.bytesDownloaded;
+                  final suffix =
+                      bytes == null
+                          ? ''
+                          : ' ${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
+                  return Row(
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Text(
+                          '${dialogContext.l10n.text('onDeviceDownloading')}$suffix',
+                        ),
+                      ),
+                    ],
+                  );
+                },
+              ),
+            ),
+      ),
+    );
+    await Future<void>.delayed(Duration.zero);
+    Object? failure;
+    var succeeded = false;
+    try {
+      await service.downloadOnDeviceModel();
+      succeeded = true;
+    } catch (error) {
+      failure = error;
+    } finally {
+      await subscription.cancel();
+      if (context.mounted) {
+        Navigator.of(context, rootNavigator: true).pop();
+      }
+      progress.dispose();
+    }
+    if (!succeeded && context.mounted) {
+      _showError(context, failure.toString());
+    }
+    return succeeded;
+  }
+
   static String _onDeviceStatusMessage(
     BuildContext context,
     OnDeviceAiAvailability availability,
   ) {
-    if (availability.message?.isNotEmpty == true) return availability.message!;
+    if (availability.reason ==
+        OnDeviceAiUnavailableReason.appleIntelligenceNotEnabled) {
+      return context.l10n.text('onDeviceAppleSetup');
+    }
+    if (availability.reason ==
+        OnDeviceAiUnavailableReason.systemUpdateRequired) {
+      return context.l10n.text('onDeviceSystemUpdate');
+    }
+    if (availability.reason == OnDeviceAiUnavailableReason.modelNotReady) {
+      return context.l10n.text('onDeviceModelPreparing');
+    }
     return switch (availability.status) {
       OnDeviceAiStatus.downloading => context.l10n.text('onDeviceDownloading'),
-      OnDeviceAiStatus.temporarilyUnavailable =>
-        context.l10n.text('onDeviceTemporarilyUnavailable'),
-      _ => context.l10n.text('onDeviceUnavailable'),
+      OnDeviceAiStatus.temporarilyUnavailable => context.l10n.text(
+        'onDeviceTemporarilyUnavailable',
+      ),
+      _ => availability.message ?? context.l10n.text('onDeviceUnavailable'),
     };
   }
 

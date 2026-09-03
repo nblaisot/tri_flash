@@ -4,6 +4,7 @@ version = "1.0-SNAPSHOT"
 plugins {
     id("com.android.library")
     id("kotlin-android")
+    id("com.google.devtools.ksp")
 }
 
 android {
@@ -27,10 +28,13 @@ android {
 
     defaultConfig {
         minSdk = 26
+        consumerProguardFiles("consumer-rules.pro")
     }
 }
 
 dependencies {
     implementation("com.google.mlkit:genai-prompt:1.0.0-beta4")
+    implementation("com.google.mlkit:genai-schema:1.0.0-alpha1")
+    ksp("com.google.mlkit:genai-schema-compiler:1.0.0-alpha1")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
 }

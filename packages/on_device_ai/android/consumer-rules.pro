@@ -1,0 +1,2 @@
+-keep @com.google.mlkit.genai.schema.annotations.Generable class * { *; }
+-keep class com.triflash.on_device_ai.**Output { *; }

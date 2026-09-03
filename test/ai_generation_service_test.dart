@@ -13,6 +13,7 @@ class _FakeClient implements AiProviderClient {
   final List<Object> responses;
   final prompts = <String>[];
   final tokenLimits = <int>[];
+  final schemas = <AiResponseSchema?>[];
   var calls = 0;
 
   @override
@@ -20,10 +21,12 @@ class _FakeClient implements AiProviderClient {
     String prompt, {
     required int maxOutputTokens,
     AiCancellationToken? cancellationToken,
+    AiResponseSchema? responseSchema,
   }) async {
     cancellationToken?.throwIfCancelled();
     prompts.add(prompt);
     tokenLimits.add(maxOutputTokens);
+    schemas.add(responseSchema);
     final response = responses[calls++];
     if (response is Exception) throw response;
     return response as String;
@@ -120,30 +123,101 @@ void main() {
     expect(client.calls, 2);
   });
 
-  test('generates bilingual text in one LLM call then annotates locally', () async {
+  test(
+    'generates bilingual text in one LLM call then annotates locally',
+    () async {
+      final settings = AiSettingsService();
+      const entries = [
+        VocabularyEntry(
+          id: 1,
+          category: 'test',
+          word: 'bonjour',
+          transcription: '',
+          translation: 'hello',
+        ),
+        VocabularyEntry(
+          id: 2,
+          category: 'test',
+          word: 'Je vais au marché.',
+          transcription: '',
+          translation: 'I am going to the market.',
+        ),
+      ];
+      final client = _FakeClient([
+        jsonEncode({
+          'title': 'Salut à un ami',
+          'titleTranslation': 'Hello to a friend',
+          'source': 'Salut ami',
+          'translation': 'Hello friend',
+        }),
+      ]);
+      final service = AiGenerationService(
+        settings: settings,
+        clientFactory: _FakeFactory(settings, client),
+      );
+      final progress = <AiGenerationProgress>[];
+
+      final generated = await service.generateText(
+        availableVocabulary: entries,
+        annotationVocabulary: const [_salut, _ami],
+        categories: const ['test'],
+        targetWordCount: 20,
+        outsideVocabularyPercent: 5,
+        onProgress: progress.add,
+      );
+
+      expect(generated.sourceAnnotations.map((item) => item.surface), [
+        'Salut',
+        'ami',
+      ]);
+      expect(generated.title, 'Salut à un ami');
+      expect(generated.titleTranslation, 'Hello to a friend');
+      expect(generated.sourceAnnotations.first.pronunciation, 'sa.ly');
+      expect(generated.sourceAnnotations.last.contextualTranslation, 'friend');
+      expect(generated.translationAnnotations, isEmpty);
+      expect(generated.sourceAnnotations.last.start, 6);
+      expect(client.calls, 1);
+      expect(client.tokenLimits, [8000]);
+      expect(client.prompts.single, contains('"source":"bonjour"'));
+      expect(client.prompts.single, contains('Je vais au marché.'));
+      expect(
+        client.prompts.single,
+        contains('Distinguish short reusable items'),
+      );
+      expect(
+        client.prompts.single,
+        contains('Never copy any sentence-like source'),
+      );
+      expect(progress.map((item) => item.stage).toList(), [
+        AiGenerationStage.generatingText,
+        AiGenerationStage.annotatingSource,
+        AiGenerationStage.saving,
+      ]);
+    },
+  );
+
+  test('generates long on-device passages in continuity batches', () async {
+    SharedPreferences.setMockInitialValues({
+      'ai_provider': 'on_device',
+      'ai_source_language': 'French',
+      'ai_translation_language': 'English',
+    });
     final settings = AiSettingsService();
-    const entries = [
-      VocabularyEntry(
-        id: 1,
-        category: 'test',
-        word: 'bonjour',
-        transcription: '',
-        translation: 'hello',
-      ),
-      VocabularyEntry(
-        id: 2,
-        category: 'test',
-        word: 'Je vais au marché.',
-        transcription: '',
-        translation: 'I am going to the market.',
-      ),
-    ];
     final client = _FakeClient([
       jsonEncode({
-        'title': 'Salut à un ami',
-        'titleTranslation': 'Hello to a friend',
-        'source': 'Salut ami',
-        'translation': 'Hello friend',
+        'title': 'Une journée',
+        'titleTranslation': 'A day',
+        'theme': 'A day in town',
+        'source': 'Premier segment.',
+        'translation': 'First segment.',
+      }),
+      jsonEncode({
+        'source': 'Deuxième segment.',
+        'translation': 'Second segment.',
+      }),
+      jsonEncode({
+        'source': 'Troisième segment.',
+        'translation': 'Third segment.',
       }),
     ]);
     final service = AiGenerationService(
@@ -152,43 +226,121 @@ void main() {
     );
     final progress = <AiGenerationProgress>[];
 
-    final generated = await service.generateText(
-      availableVocabulary: entries,
+    final result = await service.generateText(
+      availableVocabulary: const [_salut, _ami],
       annotationVocabulary: const [_salut, _ami],
       categories: const ['test'],
-      targetWordCount: 20,
-      outsideVocabularyPercent: 5,
+      targetWordCount: 160,
+      outsideVocabularyPercent: 10,
       onProgress: progress.add,
     );
 
-    expect(generated.sourceAnnotations.map((item) => item.surface), [
-      'Salut',
-      'ami',
+    expect(client.calls, 3);
+    expect(client.schemas, [
+      AiResponseSchema.passageStart,
+      AiResponseSchema.passageSegment,
+      AiResponseSchema.passageSegment,
     ]);
-    expect(generated.title, 'Salut à un ami');
-    expect(generated.titleTranslation, 'Hello to a friend');
-    expect(generated.sourceAnnotations.first.pronunciation, 'sa.ly');
-    expect(generated.sourceAnnotations.last.contextualTranslation, 'friend');
-    expect(generated.translationAnnotations, isEmpty);
-    expect(generated.sourceAnnotations.last.start, 6);
-    expect(client.calls, 1);
-    expect(client.tokenLimits, [8000]);
-    expect(client.prompts.single, contains('"source":"bonjour"'));
-    expect(client.prompts.single, contains('Je vais au marché.'));
+    expect(result.source, contains('Premier segment.\n\nDeuxième segment.'));
+    expect(client.prompts[1], contains('A day in town'));
+    expect(client.prompts[1], contains('Premier segment.'));
     expect(
-      client.prompts.single,
-      contains('Distinguish short reusable items'),
+      progress
+          .where((item) => item.stage == AiGenerationStage.generatingText)
+          .where((item) => item.current != null)
+          .map((item) => [item.current, item.total]),
+      [
+        [1, 3],
+        [2, 3],
+        [3, 3],
+      ],
     );
-    expect(
-      client.prompts.single,
-      contains('Never copy any sentence-like source'),
-    );
-    expect(progress.map((item) => item.stage).toList(), [
-      AiGenerationStage.generatingText,
-      AiGenerationStage.annotatingSource,
-      AiGenerationStage.saving,
-    ]);
   });
+
+  test('generates on-device quizzes in unique batches of five', () async {
+    SharedPreferences.setMockInitialValues({
+      'ai_provider': 'on_device',
+      'ai_source_language': 'French',
+      'ai_translation_language': 'English',
+    });
+    final settings = AiSettingsService();
+    Map<String, Object> batch(int start) => {
+      'sentences': [
+        for (var index = start; index < start + 5; index++)
+          {'source': 'Phrase $index', 'translation': 'Sentence $index'},
+      ],
+    };
+    final client = _FakeClient([jsonEncode(batch(0)), jsonEncode(batch(5))]);
+    final service = AiGenerationService(
+      settings: settings,
+      clientFactory: _FakeFactory(settings, client),
+    );
+
+    final quiz = await service.generateTranslationQuiz(
+      availableVocabulary: const [_salut, _ami],
+      categories: const ['test'],
+      sentenceCount: 10,
+      direction: TranslationQuizDirection.translationToSource,
+    );
+
+    expect(quiz.items, hasLength(10));
+    expect(client.schemas, [
+      AiResponseSchema.quizBatch,
+      AiResponseSchema.quizBatch,
+    ]);
+    expect(client.prompts[1], contains('phrase 0'));
+  });
+
+  test(
+    'estimates multilingual tokens conservatively and balances categories',
+    () {
+      expect(
+        AiGenerationService.estimateLocalTokens('日本語'),
+        greaterThanOrEqualTo(3),
+      );
+      expect(
+        AiGenerationService.estimateLocalTokens('twelve chars'),
+        greaterThanOrEqualTo(4),
+      );
+      const entries = [
+        VocabularyEntry(
+          id: 1,
+          category: 'a',
+          word: 'a1',
+          transcription: '',
+          translation: 'A1',
+        ),
+        VocabularyEntry(
+          id: 2,
+          category: 'a',
+          word: 'a2',
+          transcription: '',
+          translation: 'A2',
+        ),
+        VocabularyEntry(
+          id: 3,
+          category: 'b',
+          word: 'b1',
+          transcription: '',
+          translation: 'B1',
+        ),
+        VocabularyEntry(
+          id: 4,
+          category: 'b',
+          word: 'b2',
+          transcription: '',
+          translation: 'B2',
+        ),
+      ];
+      final batches = AiGenerationService.partitionVocabularyForBatches(
+        entries,
+        2,
+      );
+      expect(batches[0].map((entry) => entry.word), ['a1', 'a2']);
+      expect(batches[1].map((entry) => entry.word), ['b1', 'b2']);
+      expect(AiGenerationService.distributeTarget(160, 3), [54, 53, 53]);
+    },
+  );
 
   test('fails fast when the corpus has too many entries', () async {
     final settings = AiSettingsService();
@@ -275,7 +427,9 @@ void main() {
       isTrue,
     );
     expect(
-      AiGenerationService.isCorpusSizeProviderError('HTTP 413 Payload Too Large'),
+      AiGenerationService.isCorpusSizeProviderError(
+        'HTTP 413 Payload Too Large',
+      ),
       isTrue,
     );
     expect(

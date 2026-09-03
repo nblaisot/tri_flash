@@ -363,9 +363,7 @@ class _MainScreenState extends State<MainScreen> {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                ListTile(
-                  title: Text(sheetContext.l10n.text('aiActionsTitle')),
-                ),
+                ListTile(title: Text(sheetContext.l10n.text('aiActionsTitle'))),
                 ListTile(
                   leading: const Icon(Icons.auto_stories),
                   title: Text(sheetContext.l10n.text('generateText')),
@@ -577,7 +575,11 @@ class _MainScreenState extends State<MainScreen> {
       AiGenerationStage.annotatingSource => 'annotatingSource',
       AiGenerationStage.saving => 'savingGeneratedText',
     };
-    return context.l10n.text(key, values);
+    final label = context.l10n.text(key, values);
+    if (progress.current != null && progress.total != null) {
+      return '$label ${progress.current}/${progress.total}';
+    }
+    return label;
   }
 
   void _showLoading() {
