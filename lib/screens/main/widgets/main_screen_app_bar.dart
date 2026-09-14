@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
+import 'package:tri_flash/screens/main/widgets/main_screen_layout.dart';
 
 /// Custom [AppBar] used on the main screen.
 ///
@@ -15,6 +16,7 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
     required this.menuButtonKey,
     required this.categoriesButtonKey,
     required this.displayButtonKey,
+    required this.layout,
     super.key,
   });
 
@@ -28,9 +30,10 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
   final GlobalKey menuButtonKey;
   final GlobalKey categoriesButtonKey;
   final GlobalKey displayButtonKey;
+  final MainScreenLayout layout;
 
   @override
-  Size get preferredSize => const Size.fromHeight(156); // AppBar + extra controls.
+  Size get preferredSize => Size.fromHeight(56 + layout.appBarControlsHeight);
 
   @override
   Widget build(BuildContext context) {
@@ -56,6 +59,17 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                     child: ListTile(
                       leading: const Icon(Icons.quiz_outlined),
                       title: Text(context.l10n.text('translationQuiz')),
+                      contentPadding: EdgeInsets.zero,
+                    ),
+                  ),
+                  PopupMenuItem<String>(
+                    value: 'chatgpt_voice_quiz',
+                    child: ListTile(
+                      leading: const Icon(Icons.record_voice_over_outlined),
+                      title: Text(context.l10n.text('chatGptVoiceQuiz')),
+                      subtitle: Text(
+                        context.l10n.text('chatGptVoiceQuizSubtitle'),
+                      ),
                       contentPadding: EdgeInsets.zero,
                     ),
                   ),
@@ -89,13 +103,13 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
         ),
       ],
       bottom: PreferredSize(
-        preferredSize: const Size.fromHeight(100),
+        preferredSize: Size.fromHeight(layout.appBarControlsHeight),
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16.0),
           alignment: Alignment.centerLeft,
-          height: 100.0,
+          height: layout.appBarControlsHeight,
           child: Padding(
-            padding: const EdgeInsets.only(top: 20.0),
+            padding: EdgeInsets.only(top: layout.appBarControlsTopPadding),
             child: Row(
               children: [
                 Expanded(
@@ -117,7 +131,9 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: layout.isCompactWide ? 8 : 12,
+                            ),
                             minimumSize: const Size(double.infinity, 48),
                           ),
                           child: Text(
@@ -150,7 +166,9 @@ class MainScreenAppBar extends StatelessWidget implements PreferredSizeWidget {
                             shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(10),
                             ),
-                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            padding: EdgeInsets.symmetric(
+                              vertical: layout.isCompactWide ? 8 : 12,
+                            ),
                             minimumSize: const Size(double.infinity, 48),
                           ),
                           child: Text(

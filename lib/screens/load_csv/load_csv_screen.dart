@@ -78,52 +78,58 @@ class _LoadCsvScreenState extends State<LoadCsvScreen> {
           ),
         ],
       ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            _buildReloadButton(),
-            const SizedBox(height: 8),
-            const Center(child: Text('From my Google Sheet')),
-            const SizedBox(height: 20),
-            TextButton(
-              onPressed: _openExampleSheet,
-              child: Text(
-                'Open an example',
-                style: TextStyle(
-                  decoration: TextDecoration.underline,
-                  color: Theme.of(context).colorScheme.primary,
+      body: SafeArea(
+        top: false,
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              _buildReloadButton(),
+              const SizedBox(height: 8),
+              const Center(child: Text('From my Google Sheet')),
+              const SizedBox(height: 20),
+              TextButton(
+                onPressed: _openExampleSheet,
+                child: Text(
+                  'Open an example',
+                  style: TextStyle(
+                    decoration: TextDecoration.underline,
+                    color: Theme.of(context).colorScheme.primary,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 20),
-            const Text('Pair my Google Sheet', style: TextStyle(fontSize: 18)),
-            TextField(
-              controller: _controller,
-              decoration: InputDecoration(
-                labelText: 'Paste URL or scan QR Code',
-                suffixIcon: IconButton(
-                  icon: const Icon(Icons.camera_alt),
-                  onPressed: _scanQRCode,
+              const SizedBox(height: 20),
+              const Text(
+                'Pair my Google Sheet',
+                style: TextStyle(fontSize: 18),
+              ),
+              TextField(
+                controller: _controller,
+                decoration: InputDecoration(
+                  labelText: 'Paste URL or scan QR Code',
+                  suffixIcon: IconButton(
+                    icon: const Icon(Icons.camera_alt),
+                    onPressed: _scanQRCode,
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(height: 10),
-            _buildPairButton(),
-            const SizedBox(height: 30),
-            const Text(
-              'Load words from Clipboard (copied from Excel/Google Sheet - also 4 columns category | word | transcription | translation)',
-              style: TextStyle(fontSize: 16),
-            ),
-            ElevatedButton(
-              onPressed: _isClipboardLoading ? null : _loadCsvFromClipboard,
-              child:
-                  _isClipboardLoading
-                      ? const CircularProgressIndicator()
-                      : const Text('Load from Clipboard'),
-            ),
-          ],
+              const SizedBox(height: 10),
+              _buildPairButton(),
+              const SizedBox(height: 30),
+              const Text(
+                'Load words from Clipboard (copied from Excel/Google Sheet - also 4 columns category | word | transcription | translation)',
+                style: TextStyle(fontSize: 16),
+              ),
+              ElevatedButton(
+                onPressed: _isClipboardLoading ? null : _loadCsvFromClipboard,
+                child:
+                    _isClipboardLoading
+                        ? const CircularProgressIndicator()
+                        : const Text('Load from Clipboard'),
+              ),
+            ],
+          ),
         ),
       ),
     );

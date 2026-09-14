@@ -63,57 +63,60 @@ class _GeneratedTextHistoryScreenState
     final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(title: Text(l10n.text('textHistory'))),
-      body:
-          _items == null
-              ? const Center(child: CircularProgressIndicator())
-              : _items!.isEmpty
-              ? Center(child: Text(l10n.text('noHistory')))
-              : ListView.separated(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 12,
-                  vertical: 8,
-                ),
-                itemCount: _items!.length,
-                separatorBuilder: (_, _) => const Divider(height: 1),
-                itemBuilder: (context, index) {
-                  final item = _items![index];
-                  return ListTile(
-                    contentPadding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 8,
-                    ),
-                    title: Text(
-                      item.title,
-                      maxLines: 2,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    subtitle: Padding(
-                      padding: const EdgeInsets.only(top: 4),
-                      child: Text(
-                        item.titleTranslation,
+      body: SafeArea(
+        top: false,
+        child:
+            _items == null
+                ? const Center(child: CircularProgressIndicator())
+                : _items!.isEmpty
+                ? Center(child: Text(l10n.text('noHistory')))
+                : ListView.separated(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 8,
+                  ),
+                  itemCount: _items!.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (context, index) {
+                    final item = _items![index];
+                    return ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 8,
+                        vertical: 8,
+                      ),
+                      title: Text(
+                        item.title,
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
-                        style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                          fontSize:
-                              (theme.textTheme.bodyMedium?.fontSize ?? 14) *
-                              0.92,
-                        ),
+                        style: theme.textTheme.titleMedium,
                       ),
-                    ),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap:
-                        () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder:
-                                (_) => GeneratedTextViewerScreen(text: item),
+                      subtitle: Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Text(
+                          item.titleTranslation,
+                          maxLines: 2,
+                          overflow: TextOverflow.ellipsis,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            color: theme.colorScheme.onSurfaceVariant,
+                            fontSize:
+                                (theme.textTheme.bodyMedium?.fontSize ?? 14) *
+                                0.92,
                           ),
                         ),
-                    onLongPress: () => _confirmDelete(item),
-                  );
-                },
-              ),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap:
+                          () => Navigator.of(context).push(
+                            MaterialPageRoute(
+                              builder:
+                                  (_) => GeneratedTextViewerScreen(text: item),
+                            ),
+                          ),
+                      onLongPress: () => _confirmDelete(item),
+                    );
+                  },
+                ),
+      ),
     );
   }
 }

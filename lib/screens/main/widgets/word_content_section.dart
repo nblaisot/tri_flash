@@ -24,6 +24,7 @@ class WordContentSection extends StatelessWidget {
     required this.wordsCountKey,
     required this.wordTileKey,
     required this.ttsButtonKey,
+    required this.compact,
     super.key,
   });
 
@@ -46,6 +47,7 @@ class WordContentSection extends StatelessWidget {
   final GlobalKey wordsCountKey;
   final GlobalKey wordTileKey;
   final GlobalKey ttsButtonKey;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
@@ -62,7 +64,7 @@ class WordContentSection extends StatelessWidget {
             style: const TextStyle(fontSize: 16),
           ),
         ),
-        const SizedBox(height: 20),
+        SizedBox(height: compact ? 12 : 20),
         Container(
           key: wordTileKey,
           child: WordTile(
@@ -90,6 +92,7 @@ class WordContentSection extends StatelessWidget {
                 ),
               ],
             ),
+            compact: compact,
           ),
         ),
         WordTile(
@@ -97,6 +100,7 @@ class WordContentSection extends StatelessWidget {
           word: currentWord['transcription'],
           isVisible: showTranscription,
           onToggle: onToggleTranscription,
+          compact: compact,
         ),
         WordTile(
           label: context.l10n.text('translation'),
@@ -118,6 +122,7 @@ class WordContentSection extends StatelessWidget {
               ),
             ],
           ),
+          compact: compact,
         ),
       ],
     );

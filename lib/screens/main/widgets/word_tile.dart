@@ -9,6 +9,7 @@ class WordTile extends StatelessWidget {
     required this.isVisible,
     required this.onToggle,
     this.trailing,
+    this.compact = false,
   });
 
   final String label;
@@ -16,15 +17,14 @@ class WordTile extends StatelessWidget {
   final bool isVisible;
   final VoidCallback onToggle;
   final Widget? trailing;
+  final bool compact;
 
   @override
   Widget build(BuildContext context) {
     return Card(
       child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(
-          vertical: 10,
-          horizontal: 16,
-        ),
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+        minVerticalPadding: compact ? 4 : 10,
         title: Text(
           label,
           style: TextStyle(
@@ -34,7 +34,7 @@ class WordTile extends StatelessWidget {
           ),
         ),
         subtitle: Container(
-          height: 48,
+          height: compact ? 36 : 48,
           alignment: Alignment.centerLeft,
           child:
               isVisible

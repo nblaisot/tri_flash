@@ -3,20 +3,18 @@ import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/screens/main/widgets/category_selection_modal.dart';
 
-class TranslationQuizOptions {
-  const TranslationQuizOptions({
+class ChatGptVoiceQuizOptions {
+  const ChatGptVoiceQuizOptions({
     required this.categories,
-    required this.sentenceCount,
     required this.direction,
   });
 
   final List<String> categories;
-  final int sentenceCount;
   final TranslationQuizDirection direction;
 }
 
-class TranslationQuizSheet extends StatefulWidget {
-  const TranslationQuizSheet({
+class ChatGptVoiceQuizSheet extends StatefulWidget {
+  const ChatGptVoiceQuizSheet({
     required this.categories,
     required this.initialSelection,
     super.key,
@@ -25,15 +23,12 @@ class TranslationQuizSheet extends StatefulWidget {
   final List<String> categories;
   final List<String> initialSelection;
 
-  static const sentenceCounts = [5, 10, 15, 20];
-
   @override
-  State<TranslationQuizSheet> createState() => _TranslationQuizSheetState();
+  State<ChatGptVoiceQuizSheet> createState() => _ChatGptVoiceQuizSheetState();
 }
 
-class _TranslationQuizSheetState extends State<TranslationQuizSheet> {
+class _ChatGptVoiceQuizSheetState extends State<ChatGptVoiceQuizSheet> {
   late List<String> _selected;
-  int _sentenceCount = 10;
   TranslationQuizDirection _direction =
       TranslationQuizDirection.translationToSource;
 
@@ -67,12 +62,7 @@ class _TranslationQuizSheetState extends State<TranslationQuizSheet> {
     final l10n = context.l10n;
     return SafeArea(
       child: SingleChildScrollView(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          8,
-          20,
-          20 + MediaQuery.viewInsetsOf(context).bottom,
-        ),
+        padding: const EdgeInsets.fromLTRB(20, 8, 20, 20),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -89,9 +79,11 @@ class _TranslationQuizSheetState extends State<TranslationQuizSheet> {
             ),
             const SizedBox(height: 16),
             Text(
-              l10n.text('translationQuiz'),
+              l10n.text('chatGptVoiceQuiz'),
               style: Theme.of(context).textTheme.titleLarge,
             ),
+            const SizedBox(height: 8),
+            Text(l10n.text('chatGptVoiceQuizHelp')),
             const SizedBox(height: 16),
             OutlinedButton.icon(
               onPressed: _chooseCategories,
@@ -103,21 +95,6 @@ class _TranslationQuizSheetState extends State<TranslationQuizSheet> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-            ),
-            const SizedBox(height: 16),
-            Text(l10n.text('sentenceCount')),
-            const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final count in TranslationQuizSheet.sentenceCounts)
-                  ChoiceChip(
-                    label: Text('$count'),
-                    selected: _sentenceCount == count,
-                    onSelected: (_) => setState(() => _sentenceCount = count),
-                  ),
-              ],
             ),
             const SizedBox(height: 16),
             Text(l10n.text('quizDirection')),
@@ -146,18 +123,15 @@ class _TranslationQuizSheetState extends State<TranslationQuizSheet> {
               onPressed:
                   _selected.isEmpty
                       ? null
-                      : () {
-                        Navigator.pop(
-                          context,
-                          TranslationQuizOptions(
-                            categories: List.unmodifiable(_selected),
-                            sentenceCount: _sentenceCount,
-                            direction: _direction,
-                          ),
-                        );
-                      },
-              icon: const Icon(Icons.quiz_outlined),
-              label: Text(l10n.text('startQuiz')),
+                      : () => Navigator.pop(
+                        context,
+                        ChatGptVoiceQuizOptions(
+                          categories: List.unmodifiable(_selected),
+                          direction: _direction,
+                        ),
+                      ),
+              icon: const Icon(Icons.open_in_new),
+              label: Text(l10n.text('openChatGptApp')),
             ),
           ],
         ),

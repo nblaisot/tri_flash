@@ -37,14 +37,17 @@ class _EditWordsScreenState extends State<EditWordsScreen> {
       builder: (context, _) {
         if (_controller.isLoading) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: SafeArea(child: Center(child: CircularProgressIndicator())),
           );
         }
 
         return Scaffold(
           appBar: AppBar(title: const Text('Edit Words')),
-          body: Column(
-            children: [_buildSearchBar(), Expanded(child: _buildWordList())],
+          body: SafeArea(
+            top: false,
+            child: Column(
+              children: [_buildSearchBar(), Expanded(child: _buildWordList())],
+            ),
           ),
         );
       },

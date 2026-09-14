@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/screens/main/widgets/category_selection_modal.dart';
+import 'package:tri_flash/models/ai_models.dart';
+import 'package:tri_flash/services/ai/local_text_corpus_budget.dart';
 
 class TextGenerationOptions {
   const TextGenerationOptions({
@@ -18,11 +20,17 @@ class TextGenerationSheet extends StatefulWidget {
   const TextGenerationSheet({
     required this.categories,
     required this.initialSelection,
+    this.vocabularyByCategory = const {},
+    this.isOnDevice = false,
+    this.deviceTokenLimit = LocalTextCorpusBudgetEvaluator.portableTokenLimit,
     super.key,
   });
 
   final List<String> categories;
   final List<String> initialSelection;
+  final Map<String, List<VocabularyEntry>> vocabularyByCategory;
+  final bool isOnDevice;
+  final int deviceTokenLimit;
 
   @override
   State<TextGenerationSheet> createState() => _TextGenerationSheetState();
@@ -34,6 +42,47 @@ class _TextGenerationSheetState extends State<TextGenerationSheet> {
   double _wordCount = 20;
   double _outsidePercent = 5;
   late final TextEditingController _wordCountController;
+
+  List<VocabularyEntry> _vocabularyFor(List<String> categories) => [
+    for (final category in categories)
+      ...?widget.vocabularyByCategory[category],
+  ];
+
+  LocalTextCorpusBudget get _budget => LocalTextCorpusBudgetEvaluator.evaluate(
+    targetWordCount: _wordCount.round(),
+    vocabulary: _vocabularyFor(_selected),
+    deviceTokenLimit: widget.deviceTokenLimit,
+  );
+
+  String _countLabel(AppLocalizations l10n, List<String> selection) {
+    final budget = LocalTextCorpusBudgetEvaluator.evaluate(
+      targetWordCount: _wordCount.round(),
+      vocabulary: _vocabularyFor(selection),
+      deviceTokenLimit: widget.deviceTokenLimit,
+    );
+    return l10n.text('localCorpusCount', {
+      'count': budget.entryCount,
+      'limit': budget.entryLimit,
+    });
+  }
+
+  String? _warning(AppLocalizations l10n, List<String> selection) {
+    final budget = LocalTextCorpusBudgetEvaluator.evaluate(
+      targetWordCount: _wordCount.round(),
+      vocabulary: _vocabularyFor(selection),
+      deviceTokenLimit: widget.deviceTokenLimit,
+    );
+    if (budget.reason == LocalTextCorpusBudgetReason.tooManyEntries) {
+      return l10n.text('localCorpusLimitWarning', {
+        'limit': budget.entryLimit,
+        'words': _wordCount.round(),
+      });
+    }
+    if (budget.reason == LocalTextCorpusBudgetReason.tokenEstimateExceeded) {
+      return l10n.text('localCorpusTokenWarning');
+    }
+    return null;
+  }
 
   @override
   void initState() {
@@ -58,6 +107,23 @@ class _TextGenerationSheetState extends State<TextGenerationSheet> {
             selectedCategories: _selected,
             title: context.l10n.text('selectCategories'),
             doneLabel: context.l10n.text('done'),
+            selectAllLabel: context.l10n.text('selectAll'),
+            unselectAllLabel: context.l10n.text('unselectAll'),
+            categoryCounts:
+                widget.isOnDevice
+                    ? {
+                      for (final entry in widget.vocabularyByCategory.entries)
+                        entry.key: entry.value.length,
+                    }
+                    : const {},
+            selectionSummary:
+                widget.isOnDevice
+                    ? (selection) => _countLabel(context.l10n, selection)
+                    : null,
+            selectionWarning:
+                widget.isOnDevice
+                    ? (selection) => _warning(context.l10n, selection)
+                    : null,
             onSelectionChanged: (selection) {
               setState(() => _selected = List.from(selection));
             },
@@ -100,6 +166,15 @@ class _TextGenerationSheetState extends State<TextGenerationSheet> {
               const SizedBox(height: 16),
               OutlinedButton.icon(
                 onPressed: _chooseCategories,
+                style:
+                    widget.isOnDevice && !_budget.isAllowed
+                        ? OutlinedButton.styleFrom(
+                          foregroundColor: Theme.of(context).colorScheme.error,
+                          side: BorderSide(
+                            color: Theme.of(context).colorScheme.error,
+                          ),
+                        )
+                        : null,
                 icon: const Icon(Icons.category_outlined),
                 label: Text(
                   _selected.isEmpty
@@ -109,6 +184,23 @@ class _TextGenerationSheetState extends State<TextGenerationSheet> {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
+              if (widget.isOnDevice) ...[
+                const SizedBox(height: 8),
+                Text(_countLabel(l10n, _selected)),
+                if (_warning(l10n, _selected) case final warning?)
+                  InkWell(
+                    onTap: _chooseCategories,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 4, bottom: 4),
+                      child: Text(
+                        warning,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.error,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
               const SizedBox(height: 12),
               Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -169,7 +261,8 @@ class _TextGenerationSheetState extends State<TextGenerationSheet> {
               const SizedBox(height: 12),
               FilledButton.icon(
                 onPressed:
-                    _selected.isEmpty
+                    _selected.isEmpty ||
+                            (widget.isOnDevice && !_budget.isAllowed)
                         ? null
                         : () {
                           if (!_formKey.currentState!.validate()) return;

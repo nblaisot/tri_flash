@@ -6,6 +6,7 @@ import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/services/ai/ai_generation_service.dart';
 import 'package:tri_flash/services/ai/ai_provider_client.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
+import 'package:tri_flash/services/ai/local_text_corpus_budget.dart';
 
 class _FakeClient implements AiProviderClient {
   _FakeClient(this.responses);
@@ -66,6 +67,107 @@ void main() {
       'ai_translation_language': 'English',
     });
   });
+
+  test('local passage entry limit scales at 75-word boundaries', () {
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(20), 40);
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(50), 100);
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(75), 100);
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(76), 152);
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(150), 200);
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(300), 400);
+    expect(LocalTextCorpusBudgetEvaluator.entryLimitFor(500), 700);
+  });
+
+  test('local passage budget accepts the limit and rejects one over it', () {
+    List<VocabularyEntry> entries(int count) => List.generate(
+      count,
+      (index) => VocabularyEntry(
+        id: index,
+        category: index.isEven ? 'a' : 'b',
+        word: 'w$index',
+        transcription: '',
+        translation: 't$index',
+      ),
+    );
+    expect(
+      LocalTextCorpusBudgetEvaluator.evaluate(
+        targetWordCount: 20,
+        vocabulary: entries(40),
+        deviceTokenLimit: 4096,
+      ).reason,
+      LocalTextCorpusBudgetReason.allowed,
+    );
+    expect(
+      LocalTextCorpusBudgetEvaluator.evaluate(
+        targetWordCount: 20,
+        vocabulary: entries(41),
+        deviceTokenLimit: 4096,
+      ).reason,
+      LocalTextCorpusBudgetReason.tooManyEntries,
+    );
+  });
+
+  test('local passage budget catches long multilingual entries', () {
+    final entries = List.generate(
+      20,
+      (index) => VocabularyEntry(
+        id: index,
+        category: index.isEven ? 'latin' : '中文分类',
+        word:
+            index.isEven
+                ? List.filled(90, 'phrase').join(' ')
+                : List.filled(300, '漢').join(),
+        transcription: '',
+        translation: List.filled(90, 'translation').join(' '),
+      ),
+    );
+    final budget = LocalTextCorpusBudgetEvaluator.evaluate(
+      targetWordCount: 75,
+      vocabulary: entries,
+      deviceTokenLimit: 4096,
+    );
+    expect(budget.entryCount, lessThan(budget.entryLimit));
+    expect(budget.reason, LocalTextCorpusBudgetReason.tokenEstimateExceeded);
+  });
+
+  test(
+    'oversized local passage is rejected before native generation',
+    () async {
+      SharedPreferences.setMockInitialValues({
+        'ai_provider': 'on_device',
+        'ai_source_language': 'French',
+        'ai_translation_language': 'English',
+      });
+      final settings = AiSettingsService();
+      final client = _FakeClient([]);
+      final entries = List.generate(
+        41,
+        (index) => VocabularyEntry(
+          id: index,
+          category: 'test',
+          word: 'word$index',
+          transcription: '',
+          translation: 'translation$index',
+        ),
+      );
+      final service = AiGenerationService(
+        settings: settings,
+        clientFactory: _FakeFactory(settings, client),
+      );
+
+      await expectLater(
+        service.generateText(
+          availableVocabulary: entries,
+          annotationVocabulary: entries,
+          categories: const ['test'],
+          targetWordCount: 20,
+          outsideVocabularyPercent: 5,
+        ),
+        throwsA(isA<LocalTextCorpusLimitException>()),
+      );
+      expect(client.calls, 0);
+    },
+  );
 
   test('parses a bilingual sentence JSON response', () async {
     final settings = AiSettingsService();

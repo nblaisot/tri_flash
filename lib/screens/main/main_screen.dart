@@ -4,6 +4,7 @@ import 'package:fluttertoast/fluttertoast.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/screens/ai/ai_setup_flow.dart';
+import 'package:tri_flash/screens/ai/chatgpt_voice_quiz_sheet.dart';
 import 'package:tri_flash/screens/ai/generated_text_history_screen.dart';
 import 'package:tri_flash/screens/ai/generated_text_viewer_screen.dart';
 import 'package:tri_flash/screens/ai/text_generation_sheet.dart';
@@ -18,13 +19,16 @@ import 'package:tri_flash/screens/main/widgets/action_buttons_row.dart';
 import 'package:tri_flash/screens/main/widgets/category_selection_modal.dart';
 import 'package:tri_flash/screens/main/widgets/display_selection_modal.dart';
 import 'package:tri_flash/screens/main/widgets/main_screen_app_bar.dart';
+import 'package:tri_flash/screens/main/widgets/main_screen_layout.dart';
 import 'package:tri_flash/screens/main/widgets/onboarding_overlay.dart';
 import 'package:tri_flash/screens/main/widgets/word_content_section.dart';
 import 'package:tri_flash/screens/settings/settings_screen.dart';
 import 'package:tri_flash/services/csv_service.dart';
 import 'package:tri_flash/services/ai/ai_generation_service.dart';
 import 'package:tri_flash/services/ai/ai_provider_client.dart';
+import 'package:tri_flash/services/ai/chatgpt_voice_quiz_service.dart';
 import 'package:tri_flash/services/ai/generated_text_history_service.dart';
+import 'package:tri_flash/services/ai/local_text_corpus_budget.dart';
 import 'package:tri_flash/services/tts_service.dart';
 import 'package:tri_flash/services/word_service.dart';
 import 'package:tri_flash/state/app_state.dart';
@@ -40,6 +44,7 @@ class MainScreen extends StatefulWidget {
 class _MainScreenState extends State<MainScreen> {
   late final MainScreenController _controller;
   final AiGenerationService _aiGeneration = AiGenerationService();
+  final ChatGptVoiceQuizService _chatGptVoiceQuiz = ChatGptVoiceQuizService();
   final GeneratedTextHistoryService _history = GeneratedTextHistoryService();
   AiCancellationToken? _activeGeneration;
 
@@ -79,11 +84,14 @@ class _MainScreenState extends State<MainScreen> {
       builder: (context, _) {
         if (_controller.isLoading) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            body: SafeArea(child: Center(child: CircularProgressIndicator())),
           );
         }
 
         final state = _controller.state;
+        final layout = MainScreenLayout.fromWidth(
+          MediaQuery.sizeOf(context).width,
+        );
 
         return Stack(
           children: [
@@ -97,8 +105,9 @@ class _MainScreenState extends State<MainScreen> {
                 menuButtonKey: _menuButtonKey,
                 categoriesButtonKey: _categoriesButtonKey,
                 displayButtonKey: _displayButtonKey,
+                layout: layout,
               ),
-              body: _buildBody(),
+              body: SafeArea(top: false, child: _buildBody(layout)),
               floatingActionButton: FloatingActionButton(
                 tooltip: context.l10n.text('ai'),
                 onPressed: _showAiActions,
@@ -128,7 +137,7 @@ class _MainScreenState extends State<MainScreen> {
     );
   }
 
-  Widget _buildBody() {
+  Widget _buildBody(MainScreenLayout layout) {
     final word = _controller.currentWord;
     final state = _controller.state;
 
@@ -167,8 +176,9 @@ class _MainScreenState extends State<MainScreen> {
               wordsCountKey: _wordsCountKey,
               wordTileKey: _wordTileKey,
               ttsButtonKey: _ttsButtonKey,
+              compact: layout.isCompactWide,
             ),
-            const SizedBox(height: 20),
+            SizedBox(height: layout.contentGap),
             MainActionButtons(
               onEdit: () {
                 Navigator.push(
@@ -191,10 +201,14 @@ class _MainScreenState extends State<MainScreen> {
         );
 
         return SingleChildScrollView(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 112),
+          padding: layout.bodyPadding,
           child: ConstrainedBox(
             constraints: BoxConstraints(minHeight: minHeight),
-            child: Center(child: content),
+            child: Align(
+              alignment:
+                  layout.isCompactWide ? Alignment.topCenter : Alignment.center,
+              child: content,
+            ),
           ),
         );
       },
@@ -235,6 +249,9 @@ class _MainScreenState extends State<MainScreen> {
         break;
       case 'translation_quiz':
         await _startTranslationQuiz();
+        break;
+      case 'chatgpt_voice_quiz':
+        await _openChatGptVoiceQuiz();
         break;
       case 'text_history':
         await Navigator.push(
@@ -374,6 +391,15 @@ class _MainScreenState extends State<MainScreen> {
                   title: Text(sheetContext.l10n.text('translationQuiz')),
                   onTap: () => Navigator.pop(sheetContext, 'translation_quiz'),
                 ),
+                ListTile(
+                  leading: const Icon(Icons.record_voice_over_outlined),
+                  title: Text(sheetContext.l10n.text('chatGptVoiceQuiz')),
+                  subtitle: Text(
+                    sheetContext.l10n.text('chatGptVoiceQuizSubtitle'),
+                  ),
+                  onTap:
+                      () => Navigator.pop(sheetContext, 'chatgpt_voice_quiz'),
+                ),
               ],
             ),
           ),
@@ -383,7 +409,56 @@ class _MainScreenState extends State<MainScreen> {
       await _generateText();
     } else if (action == 'translation_quiz') {
       await _startTranslationQuiz();
+    } else if (action == 'chatgpt_voice_quiz') {
+      await _openChatGptVoiceQuiz();
     }
+  }
+
+  Future<void> _openChatGptVoiceQuiz() async {
+    final options = await showModalBottomSheet<ChatGptVoiceQuizOptions>(
+      context: context,
+      isScrollControlled: true,
+      builder:
+          (_) => ChatGptVoiceQuizSheet(
+            categories: _controller.categories,
+            initialSelection: _controller.selectedCategories,
+          ),
+    );
+    if (options == null || !mounted) return;
+    final maps = await _controller.loadActiveWordsForCategories(
+      options.categories,
+    );
+    if (!mounted) return;
+    final vocabulary = maps.map(VocabularyEntry.fromMap).toList();
+    if (vocabulary.isEmpty) {
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text(context.l10n.text('noWords'))));
+      return;
+    }
+
+    final sourceLanguage = await _aiGeneration.settings.getSourceLanguage();
+    final translationLanguage =
+        await _aiGeneration.settings.getTranslationLanguage();
+    if (!mounted) return;
+    final prompt = _chatGptVoiceQuiz.buildPrompt(
+      vocabulary: vocabulary,
+      categories: options.categories,
+      direction: options.direction,
+      sourceLanguage: sourceLanguage,
+      translationLanguage: translationLanguage,
+    );
+    final opened = await _chatGptVoiceQuiz.openInChatGptApp(prompt);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(
+          context.l10n.text(
+            opened ? 'chatGptPromptReady' : 'chatGptOpenFailed',
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _startTranslationQuiz() async {
@@ -458,6 +533,25 @@ class _MainScreenState extends State<MainScreen> {
   Future<void> _generateText() async {
     if (!await AiSetupFlow.ensureReady(context)) return;
     if (!mounted) return;
+    final provider = await _aiGeneration.settings.getProvider();
+    if (!mounted) return;
+    final isOnDevice = provider == AiProviderType.onDevice;
+    final vocabularyByCategory = <String, List<VocabularyEntry>>{};
+    var deviceTokenLimit = LocalTextCorpusBudgetEvaluator.portableTokenLimit;
+    if (isOnDevice) {
+      final allCategoryMaps = await _controller.loadActiveWordsForCategories(
+        _controller.categories,
+      );
+      if (!mounted) return;
+      for (final map in allCategoryMaps) {
+        final entry = VocabularyEntry.fromMap(map);
+        vocabularyByCategory.putIfAbsent(entry.category, () => []).add(entry);
+      }
+      deviceTokenLimit =
+          (await _aiGeneration.settings.getOnDeviceAvailability())
+              .totalTokenLimit;
+      if (!mounted) return;
+    }
     final options = await showModalBottomSheet<TextGenerationOptions>(
       context: context,
       isScrollControlled: true,
@@ -465,6 +559,9 @@ class _MainScreenState extends State<MainScreen> {
           (_) => TextGenerationSheet(
             categories: _controller.categories,
             initialSelection: _controller.selectedCategories,
+            vocabularyByCategory: vocabularyByCategory,
+            isOnDevice: isOnDevice,
+            deviceTokenLimit: deviceTokenLimit,
           ),
     );
     if (options == null || !mounted) return;
@@ -522,6 +619,20 @@ class _MainScreenState extends State<MainScreen> {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
       _showAiError(context.l10n.text('corpusTooLarge'));
+    } on LocalTextCorpusLimitException catch (error) {
+      if (!mounted) return;
+      Navigator.of(context, rootNavigator: true).pop();
+      final key =
+          error.budget.reason ==
+                  LocalTextCorpusBudgetReason.tokenEstimateExceeded
+              ? 'localCorpusTokenWarning'
+              : 'localCorpusLimitWarning';
+      _showAiError(
+        context.l10n.text(key, {
+          'limit': error.budget.entryLimit,
+          'words': options.targetWordCount,
+        }),
+      );
     } catch (error) {
       if (!mounted) return;
       Navigator.of(context, rootNavigator: true).pop();
@@ -644,6 +755,10 @@ class _MainScreenState extends State<MainScreen> {
           (context) => CategorySelectionModal(
             categories: _controller.categories,
             selectedCategories: _controller.selectedCategories,
+            title: context.l10n.text('selectCategories'),
+            doneLabel: context.l10n.text('done'),
+            selectAllLabel: context.l10n.text('selectAll'),
+            unselectAllLabel: context.l10n.text('unselectAll'),
             onSelectionChanged: (categories) async {
               await _controller.applySelectedCategories(categories);
             },

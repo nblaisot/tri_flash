@@ -6,6 +6,7 @@ import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/services/ai/ai_provider_client.dart';
 import 'package:tri_flash/services/ai/ai_settings_service.dart';
 import 'package:tri_flash/services/ai/on_device_ai_provider_client.dart';
+import 'package:tri_flash/services/ai/local_text_corpus_budget.dart';
 
 enum AiGenerationStage {
   generatingText,
@@ -136,6 +137,7 @@ Requirements:
       throw const FormatException('At least one vocabulary entry is required.');
     }
 
+    final provider = await _requireProvider();
     final corpusDump = [
       for (final entry in availableVocabulary)
         {
@@ -145,15 +147,15 @@ Requirements:
         },
     ];
     final corpusJson = jsonEncode(corpusDump);
-    if (isCorpusTooLarge(
-      entryCount: availableVocabulary.length,
-      corpusJsonCharacters: corpusJson.length,
-    )) {
+    if (provider != AiProviderType.onDevice &&
+        isCorpusTooLarge(
+          entryCount: availableVocabulary.length,
+          corpusJsonCharacters: corpusJson.length,
+        )) {
       throw const AiCorpusTooLargeException();
     }
 
     final token = cancellationToken ?? AiCancellationToken();
-    final provider = await _requireProvider();
     final sourceLanguage = await settings.getSourceLanguage();
     final translationLanguage = await settings.getTranslationLanguage();
 
@@ -163,6 +165,18 @@ Requirements:
     );
 
     if (provider == AiProviderType.onDevice) {
+      final client = await (_clientFactory ?? AiProviderClientFactory(settings))
+          .create(AiProviderType.onDevice);
+      var tokenLimit = LocalTextCorpusBudgetEvaluator.portableTokenLimit;
+      if (client is OnDeviceAiProviderClient) {
+        tokenLimit = (await client.getAvailability()).totalTokenLimit;
+      }
+      final budget = LocalTextCorpusBudgetEvaluator.evaluate(
+        targetWordCount: targetWordCount,
+        vocabulary: availableVocabulary,
+        deviceTokenLimit: tokenLimit,
+      );
+      if (!budget.isAllowed) throw LocalTextCorpusLimitException(budget);
       return _generateLocalText(
         availableVocabulary: availableVocabulary,
         annotationVocabulary: annotationVocabulary,
@@ -173,6 +187,7 @@ Requirements:
         translationLanguage: translationLanguage,
         cancellationToken: token,
         onProgress: onProgress,
+        client: client,
       );
     }
 
@@ -473,10 +488,9 @@ Return exactly: {"correct":true|false,"feedback":"...","correctedAnswer":"...","
     required String sourceLanguage,
     required String translationLanguage,
     required AiCancellationToken cancellationToken,
+    required AiProviderClient client,
     AiProgressCallback? onProgress,
   }) async {
-    final client = await (_clientFactory ?? AiProviderClientFactory(settings))
-        .create(AiProviderType.onDevice);
     final batchCount = max(
       1,
       (targetWordCount / onDevicePassageWordsPerBatch).ceil(),

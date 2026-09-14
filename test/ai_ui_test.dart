@@ -5,6 +5,7 @@ import 'package:tri_flash/app/app_theme.dart';
 import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/models/ai_models.dart';
 import 'package:tri_flash/screens/ai/generated_text_viewer_screen.dart';
+import 'package:tri_flash/screens/ai/chatgpt_voice_quiz_sheet.dart';
 import 'package:tri_flash/screens/ai/text_generation_sheet.dart';
 
 Widget _app(Widget home) => MaterialApp(
@@ -20,6 +21,23 @@ Widget _app(Widget home) => MaterialApp(
 );
 
 void main() {
+  testWidgets('voice quiz clearly opens in the ChatGPT app', (tester) async {
+    await tester.pumpWidget(
+      _app(
+        const Scaffold(
+          body: ChatGptVoiceQuizSheet(
+            categories: ['Food'],
+            initialSelection: ['Food'],
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('ChatGPT app voice quiz'), findsOneWidget);
+    expect(find.text('Open in the ChatGPT app'), findsOneWidget);
+    expect(find.textContaining('Start Voice in ChatGPT'), findsOneWidget);
+  });
+
   testWidgets('generation word count accepts exact 20–500 values', (
     tester,
   ) async {
@@ -47,6 +65,51 @@ void main() {
       final slider = tester.widget<Slider>(find.byType(Slider).first);
       expect(slider.value, double.parse(value));
     }
+  });
+
+  testWidgets('local generation disables an oversized category selection', (
+    tester,
+  ) async {
+    final entries = List.generate(
+      41,
+      (index) => VocabularyEntry(
+        id: index,
+        category: 'test',
+        word: 'word$index',
+        transcription: '',
+        translation: 'translation$index',
+      ),
+    );
+    await tester.pumpWidget(
+      _app(
+        Scaffold(
+          body: TextGenerationSheet(
+            categories: const ['test'],
+            initialSelection: const ['test'],
+            vocabularyByCategory: {'test': entries},
+            isOnDevice: true,
+          ),
+        ),
+      ),
+    );
+
+    expect(find.text('Selected vocabulary: 41 / 40'), findsOneWidget);
+    expect(
+      find.textContaining('Local text generation is limited'),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<FilledButton>(find.bySubtype<FilledButton>()).onPressed,
+      isNull,
+    );
+
+    await tester.enterText(find.byType(TextFormField), '50');
+    await tester.pump();
+    expect(find.text('Selected vocabulary: 41 / 100'), findsOneWidget);
+    expect(
+      tester.widget<FilledButton>(find.bySubtype<FilledButton>()).onPressed,
+      isNotNull,
+    );
   });
 
   testWidgets('viewer makes annotations clickable and clears on toggle', (

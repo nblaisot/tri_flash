@@ -93,27 +93,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
 
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.text('settings'))),
-      body:
-          _isInitializing
-              ? const Center(child: CircularProgressIndicator())
-              : ListView(
-                padding: const EdgeInsets.all(16),
-                children: [
-                  _buildAppLanguageCard(),
-                  const SizedBox(height: 16),
-                  _buildAiCard(),
-                  const SizedBox(height: 16),
-                  _buildSpeedCard(currentSpeed),
-                  const SizedBox(height: 16),
-                  _buildLanguageCard(currentLang),
-                  const SizedBox(height: 16),
-                  _buildTestButton(),
-                  const SizedBox(height: 40),
-                  _buildResetOnboardingButton(),
-                  const SizedBox(height: 20),
-                  _buildTipsCard(),
-                ],
-              ),
+      body: SafeArea(
+        top: false,
+        child:
+            _isInitializing
+                ? const Center(child: CircularProgressIndicator())
+                : ListView(
+                  padding: const EdgeInsets.all(16),
+                  children: [
+                    _buildAppLanguageCard(),
+                    const SizedBox(height: 16),
+                    _buildAiCard(),
+                    const SizedBox(height: 16),
+                    _buildSpeedCard(currentSpeed),
+                    const SizedBox(height: 16),
+                    _buildLanguageCard(currentLang),
+                    const SizedBox(height: 16),
+                    _buildTestButton(),
+                    const SizedBox(height: 40),
+                    _buildResetOnboardingButton(),
+                    const SizedBox(height: 20),
+                    _buildTipsCard(),
+                  ],
+                ),
+      ),
     );
   }
 

@@ -13,26 +13,31 @@ class DisplaySelectionModal extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.5,
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        children: [
-          const Text(
-            '"Next" will display:',
-            style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.5,
+        child: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            children: [
+              const Text(
+                '"Next" will display:',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView(
+                  children: <Widget>[
+                    _buildRadioOption(context, 'Word'),
+                    _buildRadioOption(context, 'Transcription'),
+                    _buildRadioOption(context, 'Translation'),
+                  ],
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 8),
-          Expanded(
-            child: ListView(
-              children: <Widget>[
-                _buildRadioOption(context, 'Word'),
-                _buildRadioOption(context, 'Transcription'),
-                _buildRadioOption(context, 'Translation'),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }

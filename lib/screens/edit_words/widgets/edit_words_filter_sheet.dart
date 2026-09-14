@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:tri_flash/l10n/app_localizations.dart';
 import 'package:tri_flash/screens/edit_words/controllers/edit_words_controller.dart';
 
 /// Bottom sheet that allows configuring the filters applied to the word list.
@@ -25,30 +26,41 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      height: MediaQuery.of(context).size.height * 0.7,
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Filter list',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+    return SafeArea(
+      top: false,
+      child: SizedBox(
+        height: MediaQuery.sizeOf(context).height * 0.7,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                'Filter list',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 16),
+              Expanded(
+                child: ListView(
+                  children: [
+                    _buildHiddenFilterSection(),
+                    const Divider(),
+                    _buildCategoryHeader(),
+                    const SizedBox(height: 8),
+                    _buildCategoriesList(),
+                  ],
+                ),
+              ),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: _applyFilters,
+                  child: const Text('Apply'),
+                ),
+              ),
+            ],
           ),
-          const SizedBox(height: 16),
-          _buildHiddenFilterSection(),
-          const Divider(),
-          _buildCategoryHeader(),
-          const SizedBox(height: 8),
-          Expanded(child: _buildCategoriesList()),
-          SizedBox(
-            width: double.infinity,
-            child: ElevatedButton(
-              onPressed: _applyFilters,
-              child: const Text('Apply'),
-            ),
-          ),
-        ],
+        ),
       ),
     );
   }
@@ -73,26 +85,26 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
   }
 
   Widget _buildCategoryHeader() {
+    final categories = widget.controller.allCategories;
+    final allSelected =
+        categories.isNotEmpty && categories.every(_selectedCategories.contains);
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
         const Text('Categories', style: TextStyle(fontWeight: FontWeight.bold)),
-        Row(
-          children: [
-            TextButton(
-              onPressed: () => setState(() => _selectedCategories.clear()),
-              child: const Text('Unselect All'),
-            ),
-            TextButton(
-              onPressed:
-                  () => setState(
-                    () =>
-                        _selectedCategories =
-                            widget.controller.allCategories.toSet(),
-                  ),
-              child: const Text('Select All'),
-            ),
-          ],
+        TextButton(
+          onPressed:
+              categories.isEmpty
+                  ? null
+                  : () {
+                    setState(() {
+                      _selectedCategories =
+                          allSelected ? <String>{} : categories.toSet();
+                    });
+                  },
+          child: Text(
+            context.l10n.text(allSelected ? 'unselectAll' : 'selectAll'),
+          ),
         ),
       ],
     );
@@ -100,7 +112,7 @@ class _EditWordsFilterSheetState extends State<EditWordsFilterSheet> {
 
   Widget _buildCategoriesList() {
     final categories = widget.controller.allCategories;
-    return ListView(
+    return Column(
       children:
           categories
               .map(

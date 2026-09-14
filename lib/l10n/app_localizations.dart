@@ -37,6 +37,15 @@ class AppLocalizations {
       'exampleSentence': 'Example sentence',
       'generateText': 'Generate AI text',
       'translationQuiz': 'Translation quiz',
+      'chatGptVoiceQuiz': 'ChatGPT app voice quiz',
+      'chatGptVoiceQuizSubtitle': 'Opens and runs in the ChatGPT app',
+      'chatGptVoiceQuizHelp':
+          'Tri Flash will send the selected vocabulary to the ChatGPT app as a teacher prompt. Start Voice in ChatGPT to answer aloud.',
+      'openChatGptApp': 'Open in the ChatGPT app',
+      'chatGptPromptReady':
+          'Quiz prompt copied. In ChatGPT, send it and start Voice.',
+      'chatGptOpenFailed':
+          'Could not open ChatGPT. The quiz prompt was copied to the clipboard.',
       'aiActionsTitle': 'AI',
       'textHistory': 'Past generated texts',
       'sentenceCount': 'Number of sentences',
@@ -66,6 +75,8 @@ class AppLocalizations {
       'sourceText': 'Original',
       'translationText': 'Translation',
       'selectCategories': 'Select categories',
+      'selectAll': 'Select all',
+      'unselectAll': 'Unselect all',
       'done': 'Done',
       'targetWordCount': 'Target word count',
       'wordCountRange': '20–500',
@@ -78,6 +89,11 @@ class AppLocalizations {
       'generationCancelled': 'Generation cancelled',
       'corpusTooLarge':
           'Corpus is too large for one generation request. Select fewer categories and try again.',
+      'localCorpusCount': 'Selected vocabulary: {count} / {limit}',
+      'localCorpusLimitWarning':
+          'Local text generation is limited to a corpus of {limit} words for a passage of {words} words. Select categories accordingly.',
+      'localCorpusTokenWarning':
+          'Some selected entries are unusually long. Select fewer categories so the local model has enough context.',
       'noCategories': 'Select at least one category.',
       'noWords': 'No active words were found in those categories.',
       'aiProvider': 'AI provider',
@@ -171,6 +187,15 @@ class AppLocalizations {
       'exampleSentence': 'Phrase d’exemple',
       'generateText': 'Générer un texte avec l’IA',
       'translationQuiz': 'Quiz de traduction',
+      'chatGptVoiceQuiz': 'Quiz vocal dans l’app ChatGPT',
+      'chatGptVoiceQuizSubtitle': 'S’ouvre et se déroule dans l’app ChatGPT',
+      'chatGptVoiceQuizHelp':
+          'Tri Flash enverra le vocabulaire sélectionné à l’app ChatGPT sous forme de consigne pédagogique. Lancez le mode vocal dans ChatGPT pour répondre à voix haute.',
+      'openChatGptApp': 'Ouvrir dans l’app ChatGPT',
+      'chatGptPromptReady':
+          'Consigne copiée. Dans ChatGPT, envoyez-la puis lancez le mode vocal.',
+      'chatGptOpenFailed':
+          'Impossible d’ouvrir ChatGPT. La consigne a été copiée dans le presse-papiers.',
       'aiActionsTitle': 'IA',
       'textHistory': 'Textes générés',
       'sentenceCount': 'Nombre de phrases',
@@ -200,6 +225,8 @@ class AppLocalizations {
       'sourceText': 'Original',
       'translationText': 'Traduction',
       'selectCategories': 'Sélectionner les catégories',
+      'selectAll': 'Tout sélectionner',
+      'unselectAll': 'Tout désélectionner',
       'done': 'Terminé',
       'targetWordCount': 'Nombre de mots cible',
       'wordCountRange': '20–500',
@@ -212,6 +239,11 @@ class AppLocalizations {
       'generationCancelled': 'Génération annulée',
       'corpusTooLarge':
           'Le corpus est trop grand pour une seule requête. Sélectionnez moins de catégories et réessayez.',
+      'localCorpusCount': 'Vocabulaire sélectionné : {count} / {limit}',
+      'localCorpusLimitWarning':
+          'La génération locale est limitée à un corpus de {limit} mots pour un texte de {words} mots. Sélectionnez les catégories en conséquence.',
+      'localCorpusTokenWarning':
+          'Certaines entrées sélectionnées sont particulièrement longues. Sélectionnez moins de catégories afin de laisser assez de contexte au modèle local.',
       'noCategories': 'Sélectionnez au moins une catégorie.',
       'noWords': 'Aucun mot actif dans ces catégories.',
       'aiProvider': 'Fournisseur d’IA',

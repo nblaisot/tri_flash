@@ -63,7 +63,7 @@ class _QRScanScreenState extends State<QRScanScreen> {
     } else if (_permissionPermanentlyDenied) {
       body = _PermissionInfo(
         message:
-        "Camera access is blocked. Please enable it in Settings to scan QR codes.",
+            "Camera access is blocked. Please enable it in Settings to scan QR codes.",
         onOpenSettings: () async {
           await openAppSettings();
           // When coming back, re-check:
@@ -71,14 +71,12 @@ class _QRScanScreenState extends State<QRScanScreen> {
         },
       );
     } else {
-      body = const _PermissionInfo(
-        message: "Requesting camera permission…",
-      );
+      body = const _PermissionInfo(message: "Requesting camera permission…");
     }
 
     return Scaffold(
       appBar: AppBar(title: const Text('Scan QR Code')),
-      body: body,
+      body: SafeArea(top: false, child: body),
     );
   }
 }
@@ -87,22 +85,29 @@ class _PermissionInfo extends StatelessWidget {
   final String message;
   final VoidCallback? onOpenSettings;
 
-  const _PermissionInfo({required this.message, this.onOpenSettings, super.key});
+  const _PermissionInfo({
+    required this.message,
+    this.onOpenSettings,
+    super.key,
+  });
 
   @override
   Widget build(BuildContext context) {
     return Center(
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Padding(
-          padding: const EdgeInsets.all(16),
-          child: Text(message, textAlign: TextAlign.center),
-        ),
-        if (onOpenSettings != null)
-          ElevatedButton(
-            onPressed: onOpenSettings,
-            child: const Text('Open Settings'),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(16),
+            child: Text(message, textAlign: TextAlign.center),
           ),
-      ]),
+          if (onOpenSettings != null)
+            ElevatedButton(
+              onPressed: onOpenSettings,
+              child: const Text('Open Settings'),
+            ),
+        ],
+      ),
     );
   }
 }
